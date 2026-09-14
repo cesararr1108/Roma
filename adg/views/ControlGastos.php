@@ -50,9 +50,9 @@ if (empty($_SESSION['ses_Login'])) {
           <thead class="bg-slate-50 border-b border-slate-200">
             <tr>
               <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Consecutivo</th>
-              <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Descripción</th>
+              <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Concepto</th>
+              <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Tipo</th>
               <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Solicitante</th>
-              <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Valor</th>
               <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Estado</th>
               <th class="py-3 px-4 text-xs font-semibold text-slate-500 uppercase">Fecha</th>
             </tr>
@@ -76,12 +76,13 @@ if (empty($_SESSION['ses_Login'])) {
 
       <div class="grid grid-cols-2 gap-4 text-sm bg-slate-50 rounded-lg p-4">
         <div><p class="text-slate-500">Solicitante</p><p id="detalle-solicitante" class="font-medium">-</p></div>
-        <div><p class="text-slate-500">Valor estimado</p><p id="detalle-valor" class="font-medium">-</p></div>
+        <div><p class="text-slate-500">Tipo de solicitud</p><p id="detalle-valor" class="font-medium">-</p></div>
       </div>
 
       <div id="detalle-stepper" class="flex items-start"></div>
 
       <div id="detalle-accion-actual" class="border border-slate-200 rounded-xl p-4"></div>
+      <div id="detalle-otras-acciones"></div>
 
       <div>
         <h3 class="text-sm font-semibold text-slate-700 mb-3">Historial del flujo</h3>
@@ -96,12 +97,15 @@ if (empty($_SESSION['ses_Login'])) {
   <script src="../controllers/core/formatters.js"></script>
   <script src="../controllers/core/ui.js"></script>
   <script src="../controllers/core/plantillas.js"></script>
+  <script src="../controllers/core/fragmentosFormulario.js"></script>
 
   <!-- Módulos independientes por paso del flujo -->
   <script src="../controllers/modules/solicitud.module.js"></script>
   <script src="../controllers/modules/aprobacionCotizacion.module.js"></script>
   <script src="../controllers/modules/decisionGasto.module.js"></script>
   <script src="../controllers/modules/anticipoAprobacion.module.js"></script>
+  <script src="../controllers/modules/legalizarAnticipo.module.js"></script>
+  <script src="../controllers/modules/aprobacionSoporte.module.js"></script>
   <script src="../controllers/modules/causacion.module.js"></script>
   <script src="../controllers/modules/pago.module.js"></script>
   <script src="../controllers/modules/compensacion.module.js"></script>

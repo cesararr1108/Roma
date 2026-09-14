@@ -13,11 +13,13 @@ class Auth
         }
 
         return array(
-            'id'     => isset($_SESSION['ses_Id']) ? (int) $_SESSION['ses_Id'] : 0,
-            'login'  => $_SESSION['ses_Login'],
-            'nombre' => isset($_SESSION['ses_Usuario']) ? $_SESSION['ses_Usuario'] : '',
-            'rolId'  => isset($_SESSION['ses_RolesId']) ? (int) $_SESSION['ses_RolesId'] : 0,
-            'depId'  => isset($_SESSION['ses_DepId']) ? $_SESSION['ses_DepId'] : null,
+            'id'                 => isset($_SESSION['ses_Id']) ? (int) $_SESSION['ses_Id'] : 0,
+            'login'              => $_SESSION['ses_Login'],
+            'nombre'             => isset($_SESSION['ses_Usuario']) ? $_SESSION['ses_Usuario'] : '',
+            'rolId'              => isset($_SESSION['ses_RolesId']) ? (int) $_SESSION['ses_RolesId'] : 0,
+            'depId'              => isset($_SESSION['ses_DepId']) ? $_SESSION['ses_DepId'] : null,
+            'organizacionVentas' => isset($_SESSION['ses_NumOrg']) ? $_SESSION['ses_NumOrg'] : null,
+            'oficinaVentas'      => isset($_SESSION['ses_OfcVentas']) ? $_SESSION['ses_OfcVentas'] : null,
         );
     }
 

@@ -1,8 +1,9 @@
 <?php
 /**
- * Paso 1.4: tesorería realiza el pago. Si la solicitud tenía anticipo,
- * queda pendiente la compensación (1.5, contabilidad); si venía por
- * factura, el flujo termina aquí.
+ * Tesorería realiza el pago. Si la solicitud tenía anticipo, queda
+ * pendiente la compensación (contabilidad); si no, el flujo termina aquí.
+ * El comprobante de pago solo es obligatorio si la solicitud se marcó
+ * como REQUIERE_SOPORTE al crearla.
  */
 class PagoHandler
 {
@@ -21,13 +22,22 @@ class PagoHandler
             Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
         }
 
+        $archivo = null;
+        if ((int) $solicitud['REQUIERE_SOPORTE'] === 1) {
+            try {
+                $archivo = ArchivoUploader::guardarDocumento('adjuntoPago', Config::RUTA_FACTURAS, array('pdf', 'jpg', 'jpeg', 'png'));
+            } catch (Exception $e) {
+                Respuesta::error('Esta solicitud requiere soporte de pago: '.$e->getMessage());
+            }
+        }
+
         $requiereAnticipo = ((int) $solicitud['REQUIERE_ANTICIPO'] === 1);
         $estadoDestino = $requiereAnticipo ? 'PAGADO' : 'FINALIZADO';
 
         try {
             EstadoMachine::validarTransicion($solicitud['ESTADO'], $estadoDestino);
 
-            GastoRepository::guardarPago($idSolicitud, $numeroComprobante, $usuario['id']);
+            GastoRepository::guardarPago($idSolicitud, $numeroComprobante, $archivo, $usuario['id']);
             GastoRepository::cambiarEstado($idSolicitud, $estadoDestino);
 
             FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], $estadoDestino,

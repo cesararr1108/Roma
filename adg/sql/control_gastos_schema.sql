@@ -1,21 +1,30 @@
 -- =====================================================================
 -- Módulo Control de Gastos (adg) - Esquema MSSQL
 --
--- Ajustar los nombres de T_USUARIOS y T_TERCEROS a las tablas reales del
--- sistema si difieren (solo se usan para JOIN de referencia / lookup).
+-- Reemplaza la tabla plana "T_WORKFLOW" del módulo legacy (una sola
+-- tabla con ~80 columnas para todo el flujo) por tablas normalizadas,
+-- una por concepto del dominio. Reutiliza los catálogos maestros ya
+-- existentes en el sistema (no se duplican):
+--   T_USUARIOS, T_TERCEROS, T_DPTO, T_OFICINAS_VENTAS,
+--   T_CONCEPTOS_GASTOS, T_ROLES, T_ROLES_GASTOS_INFO
+-- Ajustar sus nombres/columnas si difieren de los documentados.
 -- =====================================================================
 
 CREATE TABLE GTOS_SOLICITUDES (
-    ID                   INT IDENTITY(1,1) PRIMARY KEY,
-    DESCRIPCION          NVARCHAR(500)   NOT NULL,
-    JUSTIFICACION        NVARCHAR(1000)  NULL,
-    VALOR_ESTIMADO       DECIMAL(18,2)   NOT NULL,
-    ID_USUARIO_SOLICITA  INT             NOT NULL,
-    ID_DPTO              INT             NULL,
-    ESTADO               VARCHAR(40)     NOT NULL,
-    REQUIERE_ANTICIPO    BIT             NOT NULL DEFAULT 0,
-    FECHA_CREACION       DATETIME        NOT NULL DEFAULT GETDATE(),
-    FECHA_MODIFICACION   DATETIME        NOT NULL DEFAULT GETDATE()
+    ID                    INT IDENTITY(1,1) PRIMARY KEY,
+    ORGANIZACION_VENTAS   VARCHAR(10)     NOT NULL,   -- 2000 ROMA, 1000 Comercializadora Multidrogas
+    OFICINA_VENTAS        VARCHAR(10)     NOT NULL,
+    TIPO_GASTO            TINYINT         NOT NULL,   -- 1 Cotización, 2 Factura, 3 Anticipo
+    TIPO_ANTICIPO         VARCHAR(20)     NULL,        -- VIATICOS | BIENES_SERVICIOS (solo si requiere anticipo)
+    ID_CONCEPTO           INT             NOT NULL,   -- FK T_CONCEPTOS_GASTOS.ID
+    REQUIERE_SOPORTE      BIT             NOT NULL DEFAULT 1, -- si tesorería debe adjuntar comprobante de pago
+    COMENTARIO_SOLICITA   NVARCHAR(1000)  NOT NULL,
+    ID_USUARIO_SOLICITA   INT             NOT NULL,
+    ID_DPTO               INT             NULL,
+    ESTADO                VARCHAR(40)     NOT NULL,
+    REQUIERE_ANTICIPO     BIT             NOT NULL DEFAULT 0,
+    FECHA_CREACION        DATETIME        NOT NULL DEFAULT GETDATE(),
+    FECHA_MODIFICACION    DATETIME        NOT NULL DEFAULT GETDATE()
 );
 GO
 
@@ -41,22 +50,31 @@ CREATE TABLE GTOS_APROBACION_COTIZACION (
 );
 GO
 
+-- Datos del beneficiario del anticipo (propio o tercero) + su aprobación.
 CREATE TABLE GTOS_ANTICIPOS (
-    ID                   INT IDENTITY(1,1) PRIMARY KEY,
-    ID_SOLICITUD         INT NOT NULL UNIQUE REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
-    BENEFICIARIO         VARCHAR(20) NOT NULL,   -- PROPIO | TERCERO
-    TIPO_PERSONA         VARCHAR(20) NOT NULL,   -- NATURAL | JURIDICA
-    NIT                  VARCHAR(30) NOT NULL,
-    NOMBRES              NVARCHAR(255) NOT NULL,
-    TELEFONO             VARCHAR(30) NULL,
-    EMAIL                VARCHAR(150) NULL,
-    ESTADO_APROBACION    VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE', -- PENDIENTE | APROBADO | RECHAZADO
-    MOTIVO_RECHAZO       NVARCHAR(500) NULL,
-    ID_USUARIO_APRUEBA   INT NULL,
-    FECHA_APROBACION     DATETIME NULL
+    ID                    INT IDENTITY(1,1) PRIMARY KEY,
+    ID_SOLICITUD          INT NOT NULL UNIQUE REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
+    TIPO_PERSONA          VARCHAR(20) NOT NULL,   -- NATURAL | JURIDICA
+    DOCUMENTO_IDENTIDAD   VARCHAR(30) NULL,       -- cédula si es persona natural
+    NIT_TERCERO           VARCHAR(30) NULL,       -- NIT si es persona jurídica
+    NOMBRE_TERCERO        NVARCHAR(255) NOT NULL,
+    RAZON_SOCIAL_TERCERO  NVARCHAR(255) NULL,
+    CODIGO_SAP            VARCHAR(30) NULL,
+    CELULAR               VARCHAR(30) NULL,
+    CORREO                VARCHAR(150) NULL,
+    CARGO                 NVARCHAR(150) NULL,
+    CENTRO_COSTOS         VARCHAR(50) NULL,
+    VALOR_ANTICIPO        DECIMAL(18,2) NOT NULL,
+    ESTADO_APROBACION     VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE', -- PENDIENTE | APROBADO | RECHAZADO
+    MOTIVO_RECHAZO        NVARCHAR(500) NULL,
+    ID_USUARIO_APRUEBA    INT NULL,
+    FECHA_APROBACION      DATETIME NULL
 );
 GO
 
+-- Factura / documento soporte: usada para factura directa (TIPO_GASTO=2),
+-- para la rama sin-anticipo de cotización, y para legalizar un anticipo
+-- de tipo BIENES_SERVICIOS.
 CREATE TABLE GTOS_FACTURAS (
     ID                      INT IDENTITY(1,1) PRIMARY KEY,
     ID_SOLICITUD            INT NOT NULL UNIQUE REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
@@ -68,11 +86,88 @@ CREATE TABLE GTOS_FACTURAS (
     FECHA_FACTURA           DATE NOT NULL,
     NOMBRE_ARCHIVO          NVARCHAR(255) NOT NULL,
     RUTA_ARCHIVO            NVARCHAR(500) NOT NULL,
-    ID_FONDO                TINYINT NOT NULL,     -- 1 ROMA, 2 Fondo proveedor, 3 Nota proveedor
+    ID_FONDO                TINYINT NOT NULL,     -- 1 Fondo proveedor, 2 Nota proveedor, 3 ROMA
     NUMERO_FONDO            VARCHAR(50) NULL,
     SUBTOTAL                DECIMAL(18,2) NOT NULL,
     IVA                     DECIMAL(18,2) NOT NULL DEFAULT 0,
     TOTAL                   DECIMAL(18,2) NOT NULL
+);
+GO
+
+-- Aprobación/rechazo de la factura o legalización (SOPORTE_PENDIENTE_APROBACION).
+CREATE TABLE GTOS_APROBACION_SOPORTE (
+    ID              INT IDENTITY(1,1) PRIMARY KEY,
+    ID_SOLICITUD    INT NOT NULL REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
+    ESTADO          VARCHAR(20) NOT NULL,   -- APROBADO | RECHAZADO
+    MOTIVO          NVARCHAR(500) NULL,
+    ID_USUARIO      INT NOT NULL,
+    FECHA           DATETIME NOT NULL DEFAULT GETDATE()
+);
+GO
+
+-- Formulario de "Solicitud de viáticos" (presupuesto), diligenciado junto
+-- con los datos del anticipo cuando TIPO_ANTICIPO = VIATICOS.
+CREATE TABLE GTOS_VIATICOS_SOLICITUD (
+    ID                  INT IDENTITY(1,1) PRIMARY KEY,
+    ID_SOLICITUD        INT NOT NULL UNIQUE REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
+    NOMBRES_APELLIDOS   NVARCHAR(255) NOT NULL,
+    IDENTIFICACION      VARCHAR(30) NOT NULL,
+    CARGO               NVARCHAR(150) NULL,
+    TELEFONO            VARCHAR(30) NULL,
+    CENTRO_COSTO        VARCHAR(50) NULL,
+    EMAIL               VARCHAR(150) NULL,
+    DEPENDENCIA         NVARCHAR(150) NULL,
+    MOTIVO              NVARCHAR(1000) NOT NULL,
+    FECHA_SALIDA        DATE NOT NULL,
+    FECHA_REGRESO       DATE NOT NULL,
+    TIQUETES_AEREOS     DECIMAL(18,2) NOT NULL DEFAULT 0,
+    TIQUETES_TERRESTRES DECIMAL(18,2) NOT NULL DEFAULT 0,
+    TAXIS_BUSES         DECIMAL(18,2) NOT NULL DEFAULT 0,
+    PEAJES              DECIMAL(18,2) NOT NULL DEFAULT 0,
+    HOSPEDAJE           DECIMAL(18,2) NOT NULL DEFAULT 0,
+    ALIMENTACION        DECIMAL(18,2) NOT NULL DEFAULT 0,
+    FLOTAS_ACARREO      DECIMAL(18,2) NOT NULL DEFAULT 0,
+    VIATICOS_ADMIN      DECIMAL(18,2) NOT NULL DEFAULT 0,
+    OTROS               DECIMAL(18,2) NOT NULL DEFAULT 0,
+    DESCRIPCION_OTROS   NVARCHAR(255) NULL,
+    TOTAL_SOLICITADO    DECIMAL(18,2) NOT NULL
+);
+GO
+
+-- Cabecera de la legalización de viáticos (equivalente a "factura" para la
+-- rama VIATICOS): se diligencia cuando el anticipo ya fue aprobado.
+CREATE TABLE GTOS_VIATICOS_LEGALIZACION (
+    ID                  INT IDENTITY(1,1) PRIMARY KEY,
+    ID_SOLICITUD        INT NOT NULL UNIQUE REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
+    NOMBRES_APELLIDOS   NVARCHAR(255) NOT NULL,
+    IDENTIFICACION      VARCHAR(30) NOT NULL,
+    DESCRIPCION         NVARCHAR(500) NULL,
+    FECHA_DESDE         DATE NOT NULL,
+    FECHA_HASTA         DATE NOT NULL,
+    CENTRO_COSTO        VARCHAR(50) NULL,
+    VALOR_ANTICIPO      DECIMAL(18,2) NOT NULL,   -- copia de GTOS_ANTICIPOS.VALOR_ANTICIPO al momento de legalizar
+    VALOR_LEGALIZADO    DECIMAL(18,2) NOT NULL,   -- suma de GTOS_VIATICOS_LEGALIZACION_DETALLE
+    SALDO               DECIMAL(18,2) NOT NULL,   -- VALOR_ANTICIPO - VALOR_LEGALIZADO
+    FECHA_CREACION      DATETIME NOT NULL DEFAULT GETDATE()
+);
+GO
+
+CREATE TABLE GTOS_VIATICOS_LEGALIZACION_DETALLE (
+    ID                  INT IDENTITY(1,1) PRIMARY KEY,
+    ID_LEGALIZACION     INT NOT NULL REFERENCES GTOS_VIATICOS_LEGALIZACION(ID) ON DELETE CASCADE,
+    FECHA_GASTO         DATE NOT NULL,
+    CENTRO_COSTO        VARCHAR(50) NULL,
+    DOCUMENTO           VARCHAR(50) NULL,
+    DETALLE             NVARCHAR(255) NULL,
+    TRANSPORTE          DECIMAL(18,2) NOT NULL DEFAULT 0,
+    TAXIS               DECIMAL(18,2) NOT NULL DEFAULT 0,
+    HOTEL               DECIMAL(18,2) NOT NULL DEFAULT 0,
+    ALIMENTACION        DECIMAL(18,2) NOT NULL DEFAULT 0,
+    ATENCION            DECIMAL(18,2) NOT NULL DEFAULT 0,
+    GASOLINA            DECIMAL(18,2) NOT NULL DEFAULT 0,
+    SERVICIOS           DECIMAL(18,2) NOT NULL DEFAULT 0,
+    OTROS               DECIMAL(18,2) NOT NULL DEFAULT 0,
+    TOTAL_FILA          DECIMAL(18,2) NOT NULL
 );
 GO
 
@@ -90,6 +185,8 @@ CREATE TABLE GTOS_PAGOS (
     ID                       INT IDENTITY(1,1) PRIMARY KEY,
     ID_SOLICITUD             INT NOT NULL UNIQUE REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
     NUMERO_COMPROBANTE_PAGO  VARCHAR(50) NOT NULL,
+    NOMBRE_ARCHIVO           NVARCHAR(255) NULL,   -- soporte de pago (solo si REQUIERE_SOPORTE = 1)
+    RUTA_ARCHIVO             NVARCHAR(500) NULL,
     ID_USUARIO               INT NOT NULL,
     FECHA                    DATETIME NOT NULL DEFAULT GETDATE()
 );
@@ -104,7 +201,9 @@ CREATE TABLE GTOS_COMPENSACION (
 );
 GO
 
--- Bitácora general: TODOS los cambios de estado, motivos y comentarios del flujo.
+-- Bitácora general: TODOS los cambios de estado, motivos y comentarios del flujo,
+-- incluidas las observaciones que un rol puede dejar sin cambiar de estado
+-- (equivalente a los "no causado / no pagado / no compensado" del legacy).
 CREATE TABLE GTOS_FLUJO_HISTORIAL (
     ID               INT IDENTITY(1,1) PRIMARY KEY,
     ID_SOLICITUD     INT NOT NULL REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
@@ -119,5 +218,6 @@ GO
 
 CREATE INDEX IX_GTOS_SOLICITUDES_ESTADO   ON GTOS_SOLICITUDES(ESTADO);
 CREATE INDEX IX_GTOS_SOLICITUDES_USUARIO  ON GTOS_SOLICITUDES(ID_USUARIO_SOLICITA);
+CREATE INDEX IX_GTOS_SOLICITUDES_ORG      ON GTOS_SOLICITUDES(ORGANIZACION_VENTAS, OFICINA_VENTAS);
 CREATE INDEX IX_GTOS_FLUJO_HISTORIAL_SOL  ON GTOS_FLUJO_HISTORIAL(ID_SOLICITUD);
 GO

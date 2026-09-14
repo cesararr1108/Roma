@@ -12,6 +12,8 @@ const ControlGastosApp = (() => {
   let filtroActivo = 'mias';
   let solicitudActivaId = null;
 
+  const NOMBRES_TIPO_GASTO = { 1: 'Cotización', 2: 'Factura de gasto', 3: 'Anticipo' };
+
   const iniciar = () => {
     UI.mostrarCargando();
     enviarPeticion(ControlGastosApi.LINK_MODELO, 'cargar_datos', {})
@@ -24,7 +26,7 @@ const ControlGastosApp = (() => {
       .finally(() => UI.ocultarCargando());
 
     document.getElementById('btn-nueva-solicitud').addEventListener('click', () => {
-      ModuloSolicitud.abrirModal(cargarBandeja);
+      ModuloSolicitud.abrirModal(usuarioContexto, cargarBandeja);
     });
 
     document.querySelectorAll('[data-filtro-bandeja]').forEach((boton) => {
@@ -45,6 +47,7 @@ const ControlGastosApp = (() => {
 
   const construirUsuarioUI = () => ({
     id: usuarioContexto.usuario.id,
+    rolId: usuarioContexto.usuario.rolId,
     esGerenciaAdministrativa: usuarioContexto.esGerenciaAdministrativa,
     esContabilidad: usuarioContexto.esContabilidad,
     esTesoreria: usuarioContexto.esTesoreria,
@@ -70,9 +73,9 @@ const ControlGastosApp = (() => {
     cuerpoTabla.innerHTML = solicitudes.map((s) => `
       <tr class="hover:bg-slate-50 cursor-pointer border-b border-slate-100" data-id-solicitud="${s.ID}">
         <td class="py-3 px-4 text-sm font-medium text-slate-700">${Formato.consecutivo(s.ID)}</td>
-        <td class="py-3 px-4 text-sm text-slate-600">${s.DESCRIPCION}</td>
+        <td class="py-3 px-4 text-sm text-slate-600">${s.NOMBRE_CONCEPTO || '-'}</td>
+        <td class="py-3 px-4 text-sm text-slate-600">${NOMBRES_TIPO_GASTO[s.TIPO_GASTO] || '-'}</td>
         <td class="py-3 px-4 text-sm text-slate-600">${s.NOMBRE_SOLICITANTE || '-'}</td>
-        <td class="py-3 px-4 text-sm text-slate-600">${Formato.moneda(s.VALOR_ESTIMADO)}</td>
         <td class="py-3 px-4">${UI.badgeEstado(usuarioContexto.estados[s.ESTADO])}</td>
         <td class="py-3 px-4 text-sm text-slate-500">${Formato.fecha(s.FECHA_CREACION)}</td>
       </tr>`).join('');
@@ -104,44 +107,94 @@ const ControlGastosApp = (() => {
   };
 
   const pintarDetalle = (solicitud) => {
-    document.getElementById('detalle-titulo').textContent = `${Formato.consecutivo(solicitud.ID)} · ${solicitud.DESCRIPCION}`;
+    document.getElementById('detalle-titulo').textContent = `${Formato.consecutivo(solicitud.ID)} · ${solicitud.NOMBRE_CONCEPTO || ''}`;
     document.getElementById('detalle-badge-estado').innerHTML = UI.badgeEstado(solicitud.estadoInfo);
-    document.getElementById('detalle-valor').textContent = Formato.moneda(solicitud.VALOR_ESTIMADO);
+    document.getElementById('detalle-valor').textContent = NOMBRES_TIPO_GASTO[solicitud.TIPO_GASTO] || '-';
     document.getElementById('detalle-solicitante').textContent = solicitud.NOMBRE_SOLICITANTE || '-';
 
     pintarStepper(solicitud);
     pintarHistorial(solicitud.historial || []);
 
+    const usuarioUI = construirUsuarioUI();
     const contenedorAccion = document.getElementById('detalle-accion-actual');
     const modulo = RegistroEstados.obtener(solicitud.ESTADO);
 
     if (modulo) {
-      modulo.render(contenedorAccion, solicitud, construirUsuarioUI(), cargarDetalle);
+      modulo.render(contenedorAccion, solicitud, usuarioUI, cargarDetalle);
     } else {
       contenedorAccion.innerHTML = PlantillaEspera('El sistema', 'el flujo ha finalizado y no requiere más acciones.');
+    }
+
+    pintarOtrasAcciones(solicitud, usuarioUI);
+  };
+
+  /** Reapertura (sobre estados *_RECHAZADA) y observación libre, disponibles según el rol/estado. */
+  const pintarOtrasAcciones = (solicitud, usuarioUI) => {
+    const contenedor = document.getElementById('detalle-otras-acciones');
+    const puedeReabrir = usuarioUI.esGerenciaAdministrativa && solicitud.estadoInfo && solicitud.estadoInfo.reabreA;
+    const puedeObservar = solicitud.estadoInfo && (solicitud.estadoInfo.rolesResponsables || []).includes(usuarioUI.rolId);
+
+    if (!puedeReabrir && !puedeObservar) {
+      contenedor.innerHTML = '';
+      return;
+    }
+
+    contenedor.innerHTML = `
+      <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+        ${puedeObservar ? '<button type="button" id="btn-agregar-observacion" class="px-3 py-1.5 text-xs rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50">Agregar observación</button>' : ''}
+        ${puedeReabrir ? '<button type="button" id="btn-reabrir-solicitud" class="px-3 py-1.5 text-xs rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-50">Reabrir solicitud</button>' : ''}
+      </div>`;
+
+    const btnObservacion = document.getElementById('btn-agregar-observacion');
+    if (btnObservacion) {
+      btnObservacion.addEventListener('click', async () => {
+        const comentario = await UI.pedirTexto('Agregar observación', 'Observación');
+        if (!comentario) return;
+
+        UI.mostrarCargando();
+        enviarPeticion(ControlGastosApi.LINK_MODELO, 'agregar_observacion', { idSolicitud: solicitud.ID, comentario })
+          .then((resp) => { UI.toast(resp.mensaje, 'exito'); cargarDetalle(); })
+          .catch((err) => UI.toast(err.mensaje, 'error'))
+          .finally(() => UI.ocultarCargando());
+      });
+    }
+
+    const btnReabrir = document.getElementById('btn-reabrir-solicitud');
+    if (btnReabrir) {
+      btnReabrir.addEventListener('click', async () => {
+        const comentario = await UI.pedirTexto('Reabrir solicitud', 'Comentario (opcional)');
+        UI.mostrarCargando();
+        enviarPeticion(ControlGastosApi.LINK_MODELO, 'reabrir_solicitud', { idSolicitud: solicitud.ID, comentario: comentario || '' })
+          .then((resp) => { UI.toast(resp.mensaje, 'exito'); cargarDetalle(); cargarBandeja(); })
+          .catch((err) => UI.toast(err.mensaje, 'error'))
+          .finally(() => UI.ocultarCargando());
+      });
     }
   };
 
   const pintarStepper = (solicitud) => {
+    const requiereAnticipo = Number(solicitud.REQUIERE_ANTICIPO) === 1;
+    const esCotizacion = Number(solicitud.TIPO_GASTO) === 1;
+
     const etapas = [
-      { n: 2, l: 'Aprobación cotización' },
-      { n: 3, l: 'Anticipo / Factura' },
-      { n: 4, l: 'Aprobación anticipo' },
-      { n: 5, l: 'Causación' },
-      { n: 6, l: 'Pago' },
-      { n: 7, l: 'Compensación' },
-      { n: 9, l: 'Finalizado' },
+      { n: 2, l: 'Aprobación cotización', mostrar: esCotizacion },
+      { n: 4, l: 'Aprobación anticipo', mostrar: requiereAnticipo },
+      { n: 5, l: 'Legalizar anticipo', mostrar: requiereAnticipo },
+      { n: 6, l: 'Aprobación factura', mostrar: true },
+      { n: 8, l: 'Causación', mostrar: true },
+      { n: 9, l: 'Pago', mostrar: true },
+      { n: 10, l: 'Compensación', mostrar: requiereAnticipo },
+      { n: 11, l: 'Finalizado', mostrar: true },
     ];
     const etapaActual = (solicitud.estadoInfo && solicitud.estadoInfo.etapa) || 0;
-    const requiereAnticipo = Number(solicitud.REQUIERE_ANTICIPO) === 1;
-    const visibles = etapas.filter((e) => requiereAnticipo || (e.n !== 4 && e.n !== 7));
+    const visibles = etapas.filter((e) => e.mostrar);
 
     document.getElementById('detalle-stepper').innerHTML = visibles.map((e) => {
       const activo = e.n <= etapaActual;
       const clase = activo ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400';
       return `
         <div class="flex flex-col items-center gap-1 flex-1">
-          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${clase}">${e.n}</div>
+          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${clase}">✓</div>
           <span class="text-[11px] text-center text-slate-500">${e.l}</span>
         </div>`;
     }).join('<div class="flex-1 h-px bg-slate-200 mt-3.5"></div>');

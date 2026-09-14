@@ -1,7 +1,6 @@
 /**
- * Módulo de causación (paso 1.3). Cubre los estados ANTICIPO_APROBADO y
- * FACTURA_REGISTRADA -- ambas ramas confluyen en el mismo paso, por eso
- * un único módulo se registra para los dos códigos de estado.
+ * Módulo de causación. Todas las ramas (cotización, factura directa,
+ * anticipo) confluyen en el estado SOPORTE_APROBADO antes de este paso.
  * Responsable: Contabilidad.
  */
 (function registrarModuloCausacion() {
@@ -39,6 +38,5 @@
     });
   };
 
-  RegistroEstados.registrar('ANTICIPO_APROBADO', { render });
-  RegistroEstados.registrar('FACTURA_REGISTRADA', { render });
+  RegistroEstados.registrar('SOPORTE_APROBADO', { render });
 })();

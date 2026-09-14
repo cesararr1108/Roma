@@ -1,9 +1,10 @@
 <?php
 /**
- * Paso 1.2 (rama factura): el solicitante registra los datos del tercero,
- * el preliminar en SAP, la factura en PDF y el fondo de pago. El
- * subtotal + IVA se calculan como total en el servidor (nunca se confía
- * en el total enviado por el cliente).
+ * Registro de factura sobre una solicitud ya existente. Cubre dos puntos
+ * del flujo que llegan al mismo estado destino: la rama "sin anticipo"
+ * de una cotización aprobada, y la legalización de un anticipo de tipo
+ * BIENES_SERVICIOS. Ambos casos usan el mismo formulario/validación
+ * (FacturaDatos), por eso comparten un único handler.
  */
 class FacturaHandler
 {
@@ -18,69 +19,22 @@ class FacturaHandler
         }
         Auth::requiereDueno($solicitud['ID_USUARIO_SOLICITA']);
 
-        if ($solicitud['ESTADO'] !== 'COTIZACION_APROBADA') {
+        if (!in_array($solicitud['ESTADO'], array('COTIZACION_APROBADA', 'ANTICIPO_APROBADO'), true)) {
             Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
         }
 
-        $nit              = isset($_POST['nit']) ? trim($_POST['nit']) : '';
-        $numeroPreliminar = isset($_POST['numeroPreliminarSap']) ? trim($_POST['numeroPreliminarSap']) : '';
-        $numeroFactura    = isset($_POST['numeroFactura']) ? trim($_POST['numeroFactura']) : '';
-        $fechaFactura     = isset($_POST['fechaFactura']) ? trim($_POST['fechaFactura']) : '';
-        $idFondo          = isset($_POST['idFondo']) ? (int) $_POST['idFondo'] : 0;
-        $numeroFondo      = isset($_POST['numeroFondo']) ? trim($_POST['numeroFondo']) : '';
-        $subtotal         = isset($_POST['subtotal']) ? (float) $_POST['subtotal'] : 0;
-        $iva              = isset($_POST['iva']) ? (float) $_POST['iva'] : 0;
-
-        if ($nit === '' || $numeroPreliminar === '' || $numeroFactura === '' || $fechaFactura === '') {
-            Respuesta::error('Debe diligenciar todos los datos de la factura y el preliminar en SAP.');
-        }
-        if (!array_key_exists($idFondo, Config::fondos())) {
-            Respuesta::error('Debe seleccionar el fondo de donde sale el dinero.');
-        }
-        if ($idFondo !== Config::FONDO_ROMA && $numeroFondo === '') {
-            Respuesta::error('Debe indicar el número de fondo.');
-        }
-        if ($subtotal <= 0) {
-            Respuesta::error('El subtotal debe ser mayor a cero.');
-        }
-
-        $tercero = GastoRepository::buscarTercero($nit);
-        if (!$tercero) {
-            Respuesta::error('El NIT del tercero no existe en la base de terceros.');
-        }
+        $datosFactura = FacturaDatos::leerYValidar();
 
         try {
-            $archivo = ArchivoUploader::guardarPdf('factura', Config::RUTA_FACTURAS);
-        } catch (Exception $e) {
-            Respuesta::error($e->getMessage());
-        }
+            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'SOPORTE_PENDIENTE_APROBACION');
 
-        $total = round($subtotal + $iva, 2);
+            GastoRepository::guardarFactura($idSolicitud, $datosFactura);
+            GastoRepository::cambiarEstado($idSolicitud, 'SOPORTE_PENDIENTE_APROBACION');
 
-        try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'FACTURA_REGISTRADA');
+            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'SOPORTE_PENDIENTE_APROBACION',
+                'REGISTRAR_FACTURA', 'Factura '.$datosFactura['numeroFactura'].' registrada por un total de '.$datosFactura['total'].'.', $usuario['id']);
 
-            GastoRepository::guardarFactura($idSolicitud, array(
-                'nit'              => $nit,
-                'codigoSap'        => $tercero['CODIGO_SAP'],
-                'nombreTercero'    => $tercero['NOMBRES'],
-                'numeroPreliminar' => $numeroPreliminar,
-                'numeroFactura'    => $numeroFactura,
-                'fechaFactura'     => $fechaFactura,
-                'archivo'          => $archivo,
-                'idFondo'          => $idFondo,
-                'numeroFondo'      => $numeroFondo,
-                'subtotal'         => $subtotal,
-                'iva'              => $iva,
-                'total'            => $total,
-            ));
-
-            GastoRepository::cambiarEstado($idSolicitud, 'FACTURA_REGISTRADA');
-
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'FACTURA_REGISTRADA',
-                'REGISTRAR_FACTURA', 'Factura '.$numeroFactura.' registrada por un total de '.$total.'.', $usuario['id']);
-
-            Respuesta::ok(array('total' => $total), 'Factura registrada correctamente.');
+            Respuesta::ok(array('total' => $datosFactura['total']), 'Factura registrada correctamente.');
         } catch (Exception $e) {
             Respuesta::error($e->getMessage());
         }

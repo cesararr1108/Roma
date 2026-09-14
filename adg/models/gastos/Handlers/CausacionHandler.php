@@ -1,8 +1,8 @@
 <?php
 /**
- * Paso 1.3: contabilidad causa la solicitud, ya sea que venga por la
- * rama de anticipo o de factura (ambas llegan al mismo estado antes de
- * este paso, así que un único handler cubre las dos).
+ * Contabilidad causa la solicitud, sin importar si llegó por factura
+ * directa, cotización sin anticipo, o legalización de anticipo (todas
+ * confluyen en SOPORTE_APROBADO antes de este paso).
  */
 class CausacionHandler
 {
@@ -18,7 +18,7 @@ class CausacionHandler
         }
 
         $solicitud = GastoRepository::obtenerSolicitud($idSolicitud);
-        if (!$solicitud || !in_array($solicitud['ESTADO'], array('ANTICIPO_APROBADO', 'FACTURA_REGISTRADA'), true)) {
+        if (!$solicitud || $solicitud['ESTADO'] !== 'SOPORTE_APROBADO') {
             Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
         }
 

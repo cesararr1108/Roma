@@ -1,5 +1,5 @@
 /**
- * Módulo del estado ANTICIPO_PENDIENTE_APROBACION (paso 1.2.1).
+ * Módulo del estado ANTICIPO_PENDIENTE_APROBACION.
  * Responsable: Gerencia Administrativa.
  */
 (function registrarModuloAprobacionAnticipo() {
@@ -15,12 +15,17 @@
       <div class="space-y-4">
         <h4 class="font-semibold text-slate-800">Aprobación de anticipo</h4>
         <dl class="grid sm:grid-cols-2 gap-3 text-sm bg-slate-50 rounded-lg p-4">
-          <div><dt class="text-slate-500">Beneficiario</dt><dd class="font-medium">${a.BENEFICIARIO === 'PROPIO' ? 'El propio solicitante' : 'Tercero'}</dd></div>
+          <div><dt class="text-slate-500">Tipo de anticipo</dt><dd class="font-medium">${solicitud.TIPO_ANTICIPO === 'VIATICOS' ? 'Viáticos (viaje)' : 'Adquisición de bienes y servicios'}</dd></div>
+          <div><dt class="text-slate-500">Valor solicitado</dt><dd class="font-medium">${Formato.moneda(a.VALOR_ANTICIPO)}</dd></div>
           <div><dt class="text-slate-500">Tipo de persona</dt><dd class="font-medium">${a.TIPO_PERSONA || '-'}</dd></div>
-          <div><dt class="text-slate-500">NIT</dt><dd class="font-medium">${a.NIT || '-'}</dd></div>
-          <div><dt class="text-slate-500">Nombres / Razón comercial</dt><dd class="font-medium">${a.NOMBRES || '-'}</dd></div>
-          <div><dt class="text-slate-500">Teléfono</dt><dd class="font-medium">${a.TELEFONO || '-'}</dd></div>
-          <div><dt class="text-slate-500">Email</dt><dd class="font-medium">${a.EMAIL || '-'}</dd></div>
+          <div><dt class="text-slate-500">Documento / NIT</dt><dd class="font-medium">${a.DOCUMENTO_IDENTIDAD || a.NIT_TERCERO || '-'}</dd></div>
+          <div><dt class="text-slate-500">Nombres / Razón comercial</dt><dd class="font-medium">${a.NOMBRE_TERCERO || '-'}</dd></div>
+          <div><dt class="text-slate-500">Razón social</dt><dd class="font-medium">${a.RAZON_SOCIAL_TERCERO || '-'}</dd></div>
+          <div><dt class="text-slate-500">Código SAP</dt><dd class="font-medium">${a.CODIGO_SAP || '-'}</dd></div>
+          <div><dt class="text-slate-500">Cargo</dt><dd class="font-medium">${a.CARGO || '-'}</dd></div>
+          <div><dt class="text-slate-500">Centro de costos</dt><dd class="font-medium">${a.CENTRO_COSTOS || '-'}</dd></div>
+          <div><dt class="text-slate-500">Teléfono</dt><dd class="font-medium">${a.CELULAR || '-'}</dd></div>
+          <div><dt class="text-slate-500">Email</dt><dd class="font-medium">${a.CORREO || '-'}</dd></div>
         </dl>
         <div class="flex flex-wrap gap-2">
           <button type="button" id="btn-aprobar-anticipo" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700">Aprobar anticipo</button>
