@@ -1,74 +1,61 @@
 <?php
 /**
- * Puerto de acceso a datos (adaptador de salida) para el módulo de
- * Control de Gastos. Reutiliza la conexión que ya abre conectar()
- * (funciones.php) sin importar si expone un recurso sqlsrv/mssql o una
- * instancia PDO_SQLSRV: solo hay que ajustar getConexion() si el nombre
- * real de la variable global difiere.
+ * Adaptador de acceso a datos sobre la conexión que ya expone conectar()
+ * (funciones.php), basada en la extensión mssql_* de PHP 5.4.
  *
- * Todo el resto del módulo (Repositories) solo conoce Db::query() /
- * Db::ejecutar() / Db::nuevoId(), nunca el driver concreto -- así el
- * driver se puede cambiar sin tocar la lógica de negocio.
+ * conectar() no deja una variable global: retorna el recurso de conexión.
+ * Se cachea aquí (una sola vez por request) para no reabrir conexión en
+ * cada consulta; como mssql_connect reutiliza el link cuando se llama de
+ * nuevo con los mismos parámetros, esto es seguro incluso si conectar()
+ * también se invoca en otro punto del script.
+ *
+ * La extensión mssql_* NO soporta sentencias preparadas, así que los
+ * parámetros (:clave) se interpolan ya escapados -- Repositories y
+ * Handlers nunca concatenan valores directamente en el SQL, por lo que
+ * la protección contra inyección queda centralizada acá.
+ *
+ * Si el día de mañana se cambia de driver (sqlsrv, PDO_SQLSRV), solo este
+ * archivo se toca: el resto del módulo únicamente conoce Db::query() /
+ * Db::ejecutar() / Db::nuevoId().
  */
 class Db
 {
-    private static function getConexion()
+    private static function conexion()
     {
-        global $conexion, $conn, $link;
-
-        if (isset($conexion)) return $conexion;
-        if (isset($conn))     return $conn;
-        if (isset($link))     return $link;
-
-        throw new Exception('No se encontró una conexión activa. Verifique que conectar() (funciones.php) exponga $conexion.');
-    }
-
-    private static function esPDO($cn)
-    {
-        return ($cn instanceof PDO);
+        static $link = null;
+        if ($link === null) {
+            $link = conectar();
+        }
+        return $link;
     }
 
     /** Devuelve un arreglo asociativo por cada fila. */
     public static function query($sql, $params = array())
     {
-        $cn = self::getConexion();
+        $sqlFinal = self::interpolar($sql, $params);
+        $resultado = mssql_query($sqlFinal, self::conexion());
 
-        if (self::esPDO($cn)) {
-            $stmt = $cn->prepare($sql);
-            $stmt->execute($params);
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
-        }
-
-        $preparado = self::interpolarSqlsrv($sql, $params);
-        $stmt = sqlsrv_query($cn, $preparado['sql'], $preparado['valores']);
-        if ($stmt === false) {
-            throw new Exception('Error de consulta: '.print_r(sqlsrv_errors(), true));
+        if ($resultado === false) {
+            throw new Exception('Error de consulta SQL.');
         }
 
         $filas = array();
-        while ($fila = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        while ($fila = mssql_fetch_assoc($resultado)) {
             $filas[] = $fila;
         }
         return $filas;
     }
 
-    /** INSERT/UPDATE/DELETE. Devuelve el número de filas afectadas. */
+    /** INSERT/UPDATE/DELETE. */
     public static function ejecutar($sql, $params = array())
     {
-        $cn = self::getConexion();
+        $sqlFinal = self::interpolar($sql, $params);
+        $resultado = mssql_query($sqlFinal, self::conexion());
 
-        if (self::esPDO($cn)) {
-            $stmt = $cn->prepare($sql);
-            $stmt->execute($params);
-            return $stmt->rowCount();
+        if ($resultado === false) {
+            throw new Exception('Error al ejecutar la sentencia SQL.');
         }
-
-        $preparado = self::interpolarSqlsrv($sql, $params);
-        $stmt = sqlsrv_query($cn, $preparado['sql'], $preparado['valores']);
-        if ($stmt === false) {
-            throw new Exception('Error de ejecución: '.print_r(sqlsrv_errors(), true));
-        }
-        return sqlsrv_rows_affected($stmt);
+        return true;
     }
 
     /** $sql debe terminar en "...; SELECT SCOPE_IDENTITY() AS ID;" */
@@ -78,15 +65,30 @@ class Db
         return isset($filas[0]['ID']) ? (int) $filas[0]['ID'] : 0;
     }
 
-    /** Traduce parámetros nombrados (:clave) a los "?" posicionales que usa sqlsrv. */
-    private static function interpolarSqlsrv($sql, $params)
+    /** Sustituye :clave por el valor ya escapado, tomado de $params. */
+    private static function interpolar($sql, $params)
     {
-        $valores = array();
-        $sqlFinal = preg_replace_callback('/:([a-zA-Z0-9_]+)/', function ($coincidencia) use ($params, &$valores) {
-            $valores[] = isset($params[$coincidencia[1]]) ? $params[$coincidencia[1]] : null;
-            return '?';
+        return preg_replace_callback('/:([a-zA-Z0-9_]+)/', function ($coincidencia) use ($params) {
+            if (!array_key_exists($coincidencia[1], $params)) {
+                return 'NULL';
+            }
+            return self::escapar($params[$coincidencia[1]]);
         }, $sql);
+    }
 
-        return array('sql' => $sqlFinal, 'valores' => $valores);
+    /** Escapa un valor para incrustarlo de forma segura en T-SQL. */
+    private static function escapar($valor)
+    {
+        if ($valor === null) {
+            return 'NULL';
+        }
+        if (is_bool($valor)) {
+            return $valor ? '1' : '0';
+        }
+        if (is_int($valor) || is_float($valor)) {
+            return (string) $valor;
+        }
+        // Cadena: se duplican las comillas simples (estándar de escape en T-SQL).
+        return "'".str_replace("'", "''", (string) $valor)."'";
     }
 }
