@@ -401,9 +401,11 @@ class GastoRepository
     {
         $sql = "SELECT u.ID, u.NOMBRES, u.APELLIDOS, u.IDENTIFICACION, u.CELULAR, u.EMAIL, u.CODIGO_SAP,
                        t.RAZON_COMERCIAL, t.NIT,
+                       r.TITULO AS CARGO,
                        rgi.nivel AS NIVEL_VIATICOS
                 FROM T_USUARIOS u
                 LEFT JOIN T_TERCEROS t ON t.CODIGO_SAP = u.CODIGO_SAP
+                LEFT JOIN T_ROLES r ON r.ID = u.ROLES_ID
                 LEFT JOIN T_ROLES_GASTOS_INFO rgi ON rgi.ROL = u.ROLES_ID
                 WHERE u.ID = :idUsuario";
 

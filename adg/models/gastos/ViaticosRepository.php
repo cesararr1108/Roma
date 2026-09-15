@@ -28,9 +28,16 @@ class ViaticosRepository
             'centroCosto'        => $datos['centroCosto'],
             'email'              => $datos['email'],
             'dependencia'        => $datos['dependencia'],
+            'fechaSolicitud'     => date('Y-m-d'),
             'motivo'             => $datos['motivo'],
             'fechaSalida'        => $datos['fechaSalida'],
             'fechaRegreso'       => $datos['fechaRegreso'],
+            'ciudadSalida'       => $datos['ciudadSalida'],
+            'salidaAereo'        => $datos['salidaAereo'] ? 1 : 0,
+            'salidaTerrestre'    => $datos['salidaTerrestre'] ? 1 : 0,
+            'ciudadRegreso'      => $datos['ciudadRegreso'],
+            'regresoAereo'       => $datos['regresoAereo'] ? 1 : 0,
+            'regresoTerrestre'   => $datos['regresoTerrestre'] ? 1 : 0,
             'tiquetesAereos'     => $datos['tiquetesAereos'],
             'tiquetesTerrestres' => $datos['tiquetesTerrestres'],
             'taxisBuses'         => $datos['taxisBuses'],
@@ -50,6 +57,8 @@ class ViaticosRepository
                         CARGO = :cargo, TELEFONO = :telefono, CENTRO_COSTO = :centroCosto,
                         EMAIL = :email, DEPENDENCIA = :dependencia, MOTIVO = :motivo,
                         FECHA_SALIDA = :fechaSalida, FECHA_REGRESO = :fechaRegreso,
+                        CIUDAD_SALIDA = :ciudadSalida, SALIDA_AEREO = :salidaAereo, SALIDA_TERRESTRE = :salidaTerrestre,
+                        CIUDAD_REGRESO = :ciudadRegreso, REGRESO_AEREO = :regresoAereo, REGRESO_TERRESTRE = :regresoTerrestre,
                         TIQUETES_AEREOS = :tiquetesAereos, TIQUETES_TERRESTRES = :tiquetesTerrestres,
                         TAXIS_BUSES = :taxisBuses, PEAJES = :peajes, HOSPEDAJE = :hospedaje,
                         ALIMENTACION = :alimentacion, FLOTAS_ACARREO = :flotasAcarreo,
@@ -59,13 +68,15 @@ class ViaticosRepository
         } else {
             $sql = "INSERT INTO GTOS_VIATICOS_SOLICITUD
                         (ID_SOLICITUD, NOMBRES_APELLIDOS, IDENTIFICACION, CARGO, TELEFONO, CENTRO_COSTO,
-                         EMAIL, DEPENDENCIA, MOTIVO, FECHA_SALIDA, FECHA_REGRESO, TIQUETES_AEREOS,
-                         TIQUETES_TERRESTRES, TAXIS_BUSES, PEAJES, HOSPEDAJE, ALIMENTACION,
+                         EMAIL, DEPENDENCIA, FECHA_SOLICITUD, MOTIVO, FECHA_SALIDA, FECHA_REGRESO,
+                         CIUDAD_SALIDA, SALIDA_AEREO, SALIDA_TERRESTRE, CIUDAD_REGRESO, REGRESO_AEREO, REGRESO_TERRESTRE,
+                         TIQUETES_AEREOS, TIQUETES_TERRESTRES, TAXIS_BUSES, PEAJES, HOSPEDAJE, ALIMENTACION,
                          FLOTAS_ACARREO, VIATICOS_ADMIN, OTROS, DESCRIPCION_OTROS, TOTAL_SOLICITADO)
                     VALUES
                         (:idSolicitud, :nombresApellidos, :identificacion, :cargo, :telefono, :centroCosto,
-                         :email, :dependencia, :motivo, :fechaSalida, :fechaRegreso, :tiquetesAereos,
-                         :tiquetesTerrestres, :taxisBuses, :peajes, :hospedaje, :alimentacion,
+                         :email, :dependencia, :fechaSolicitud, :motivo, :fechaSalida, :fechaRegreso,
+                         :ciudadSalida, :salidaAereo, :salidaTerrestre, :ciudadRegreso, :regresoAereo, :regresoTerrestre,
+                         :tiquetesAereos, :tiquetesTerrestres, :taxisBuses, :peajes, :hospedaje, :alimentacion,
                          :flotasAcarreo, :viaticosAdmin, :otros, :descripcionOtros, :total)";
         }
 

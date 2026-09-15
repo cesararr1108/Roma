@@ -35,11 +35,24 @@ class ViaticosHandler
             'centroCosto'      => isset($_POST['centroCosto']) ? trim($_POST['centroCosto']) : '',
         );
 
-        if ($cabecera['nombresApellidos'] === '' || $cabecera['identificacion'] === '') {
-            Respuesta::error('Debe indicar nombres e identificación en la legalización.');
+        // Mismos 6 campos obligatorios que validarFormularioLegalizacionViaticos() en el formato F-FR-024.
+        if ($cabecera['nombresApellidos'] === '') {
+            Respuesta::error('Debe ingresar el nombre del tercero.');
         }
-        if ($cabecera['fechaDesde'] === '' || $cabecera['fechaHasta'] === '') {
-            Respuesta::error('Debe indicar el rango de fechas del viaje.');
+        if ($cabecera['identificacion'] === '') {
+            Respuesta::error('Debe ingresar la identificación del tercero.');
+        }
+        if ($cabecera['descripcion'] === '') {
+            Respuesta::error('Debe ingresar la descripción del gasto.');
+        }
+        if ($cabecera['fechaDesde'] === '') {
+            Respuesta::error('Debe ingresar la fecha desde.');
+        }
+        if ($cabecera['fechaHasta'] === '') {
+            Respuesta::error('Debe ingresar la fecha hasta.');
+        }
+        if ($cabecera['centroCosto'] === '') {
+            Respuesta::error('Debe ingresar el centro de costo.');
         }
 
         $filas = json_decode(isset($_POST['filas']) ? $_POST['filas'] : '[]', true);
@@ -47,18 +60,31 @@ class ViaticosHandler
             Respuesta::error('Debe agregar al menos una línea de gasto a la legalización.');
         }
 
+        // Mismas 3 validaciones por fila que validarFormularioLegalizacionViaticos(): fecha, centro de
+        // costo y detalle no vacíos, y que la fila sume algo (evita filas "en blanco" con 0 en todo).
         $filasValidadas = array();
-        foreach ($filas as $fila) {
-            $fechaGasto = isset($fila['fechaGasto']) ? trim($fila['fechaGasto']) : '';
+        foreach ($filas as $indice => $fila) {
+            $numeroFila = $indice + 1;
+
+            $fechaGasto  = isset($fila['fechaGasto']) ? trim($fila['fechaGasto']) : '';
+            $centroCosto = isset($fila['centroCosto']) ? trim($fila['centroCosto']) : '';
+            $detalle     = isset($fila['detalle']) ? trim($fila['detalle']) : '';
+
             if ($fechaGasto === '') {
-                Respuesta::error('Cada línea de la legalización debe tener fecha de gasto.');
+                Respuesta::error('Debe ingresar la fecha del gasto en la fila '.$numeroFila.'.');
+            }
+            if ($centroCosto === '') {
+                Respuesta::error('Debe ingresar el centro de costo en la fila '.$numeroFila.'.');
+            }
+            if ($detalle === '') {
+                Respuesta::error('Debe ingresar la descripción del gasto en la fila '.$numeroFila.'.');
             }
 
             $filaValidada = array(
                 'fechaGasto'   => $fechaGasto,
-                'centroCosto'  => isset($fila['centroCosto']) ? trim($fila['centroCosto']) : null,
+                'centroCosto'  => $centroCosto,
                 'documento'    => isset($fila['documento']) ? trim($fila['documento']) : null,
-                'detalle'      => isset($fila['detalle']) ? trim($fila['detalle']) : null,
+                'detalle'      => $detalle,
                 'transporte'   => isset($fila['transporte']) ? (float) $fila['transporte'] : 0,
                 'taxis'        => isset($fila['taxis']) ? (float) $fila['taxis'] : 0,
                 'hotel'        => isset($fila['hotel']) ? (float) $fila['hotel'] : 0,
@@ -74,7 +100,7 @@ class ViaticosHandler
                 + $filaValidada['servicios'] + $filaValidada['otros'];
 
             if ($totalFila <= 0) {
-                Respuesta::error('Cada línea de la legalización debe tener al menos un valor mayor a cero.');
+                Respuesta::error('Debe especificar al menos un valor de gasto en la fila '.$numeroFila.'.');
             }
 
             $filasValidadas[] = $filaValidada;
