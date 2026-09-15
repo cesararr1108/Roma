@@ -1,10 +1,11 @@
 <?php
 /**
- * Registro de factura sobre una solicitud ya existente. Cubre dos puntos
- * del flujo que llegan al mismo estado destino: la rama "sin anticipo"
- * de una cotización aprobada, y la legalización de un anticipo de tipo
- * BIENES_SERVICIOS. Ambos casos usan el mismo formulario/validación
- * (FacturaDatos), por eso comparten un único handler.
+ * Registra una factura. La misma acción sirve para dos nodos distintos
+ * del flujo -- "factura_datos" (cotización sin anticipo, o factura
+ * directa cuando ya trae los datos desde la creación) y "legalizacion"
+ * (anticipo de bienes/servicios) -- porque ambos piden exactamente el
+ * mismo formulario y ambos terminan en el mismo sitio: aprobación de
+ * gerencia administrativa.
  */
 class FacturaHandler
 {
@@ -19,19 +20,19 @@ class FacturaHandler
         }
         Auth::requiereDueno($solicitud['ID_USUARIO_SOLICITA']);
 
-        if (!in_array($solicitud['ESTADO'], array('COTIZACION_APROBADA', 'ANTICIPO_APROBADO'), true)) {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if (!in_array($solicitud['NODO_ACTUAL'], array('factura_datos', 'legalizacion'), true)) {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
 
         $datosFactura = FacturaDatos::leerYValidar();
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'SOPORTE_PENDIENTE_APROBACION');
+            $nodoSiguiente = 'aprobacion_soporte';
 
             GastoRepository::guardarFactura($idSolicitud, $datosFactura);
-            GastoRepository::cambiarEstado($idSolicitud, 'SOPORTE_PENDIENTE_APROBACION');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'SOPORTE_PENDIENTE_APROBACION',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'REGISTRAR_FACTURA', 'Factura '.$datosFactura['numeroFactura'].' registrada por un total de '.$datosFactura['total'].'.', $usuario['id']);
 
             Respuesta::ok(array('total' => $datosFactura['total']), 'Factura registrada correctamente.');

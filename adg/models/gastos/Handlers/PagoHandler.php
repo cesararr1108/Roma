@@ -1,9 +1,9 @@
 <?php
 /**
- * Tesorería realiza el pago. Si la solicitud tenía anticipo, queda
- * pendiente la compensación (contabilidad); si no, el flujo termina aquí.
- * El comprobante de pago solo es obligatorio si la solicitud se marcó
- * como REQUIERE_SOPORTE al crearla.
+ * Nodo "pago": tesorería registra el pago. El siguiente nodo depende de
+ * REQUIERE_ANTICIPO, una bandera fijada al crear la solicitud (o al
+ * elegir rama) -- dato ya persistido, no algo que mande el navegador:
+ * si requiere anticipo, sigue a "legalizacion"; si no, a "cruzado".
  */
 class PagoHandler
 {
@@ -18,8 +18,8 @@ class PagoHandler
         }
 
         $solicitud = GastoRepository::obtenerSolicitud($idSolicitud);
-        if (!$solicitud || $solicitud['ESTADO'] !== 'CAUSADO') {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if (!$solicitud || $solicitud['NODO_ACTUAL'] !== 'pago') {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
 
         $archivo = null;
@@ -32,20 +32,18 @@ class PagoHandler
         }
 
         $requiereAnticipo = ((int) $solicitud['REQUIERE_ANTICIPO'] === 1);
-        $estadoDestino = $requiereAnticipo ? 'PAGADO' : 'FINALIZADO';
+        $nodoSiguiente = $requiereAnticipo ? 'legalizacion' : 'cruzado';
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], $estadoDestino);
-
             GastoRepository::guardarPago($idSolicitud, $numeroComprobante, $archivo, $usuario['id']);
-            GastoRepository::cambiarEstado($idSolicitud, $estadoDestino);
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], $estadoDestino,
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'REGISTRAR_PAGO', 'Comprobante de pago '.$numeroComprobante.'.', $usuario['id']);
 
             $mensaje = $requiereAnticipo
-                ? 'Pago registrado. Queda pendiente la compensación del anticipo.'
-                : 'Pago registrado. El flujo ha finalizado.';
+                ? 'Pago registrado. Queda pendiente legalizar el anticipo.'
+                : 'Pago registrado. Queda pendiente el cruce contable.';
 
             Respuesta::ok(null, $mensaje);
         } catch (Exception $e) {

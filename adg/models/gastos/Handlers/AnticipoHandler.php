@@ -1,10 +1,8 @@
 <?php
 /**
- * Rama "requiere anticipo" que se desprende de una cotización aprobada:
- * el solicitante indica el tipo de anticipo y los datos del beneficiario
- * (propio o tercero), y queda pendiente de aprobación de gerencia
- * administrativa. Reutiliza los mismos validadores que
- * SolicitudAnticipoHandler porque piden exactamente los mismos campos.
+ * Nodo "anticipo_datos": el dueño registra los datos del beneficiario
+ * (propio o tercero) del anticipo. Nodo "anticipo_aprobacion": gerencia
+ * administrativa aprueba o rechaza.
  */
 class AnticipoHandler
 {
@@ -19,8 +17,8 @@ class AnticipoHandler
         }
         Auth::requiereDueno($solicitud['ID_USUARIO_SOLICITA']);
 
-        if ($solicitud['ESTADO'] !== 'COTIZACION_APROBADA') {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if ($solicitud['NODO_ACTUAL'] !== 'anticipo_datos') {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
 
         $tipoAnticipo = isset($_POST['tipoAnticipo']) ? $_POST['tipoAnticipo'] : '';
@@ -32,7 +30,7 @@ class AnticipoHandler
         $datosViaticos = ($tipoAnticipo === Config::TIPO_ANTICIPO_VIATICOS) ? ViaticosDatos::leerSolicitudYValidar() : null;
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'ANTICIPO_PENDIENTE_APROBACION');
+            $nodoSiguiente = 'anticipo_aprobacion';
 
             GastoRepository::fijarTipoAnticipo($idSolicitud, $tipoAnticipo);
             GastoRepository::guardarAnticipo($idSolicitud, $datosAnticipo);
@@ -41,9 +39,9 @@ class AnticipoHandler
                 ViaticosRepository::guardarSolicitud($idSolicitud, $datosViaticos);
             }
 
-            GastoRepository::cambiarEstado($idSolicitud, 'ANTICIPO_PENDIENTE_APROBACION');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'ANTICIPO_PENDIENTE_APROBACION',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'REGISTRAR_DATOS_ANTICIPO', 'Datos de anticipo registrados para '.$datosAnticipo['nombreTercero'].'.', $usuario['id']);
 
             Respuesta::ok(null, 'Anticipo enviado a aprobación de gerencia administrativa.');
@@ -58,17 +56,17 @@ class AnticipoHandler
         $idSolicitud = isset($_POST['idSolicitud']) ? (int) $_POST['idSolicitud'] : 0;
 
         $solicitud = GastoRepository::obtenerSolicitud($idSolicitud);
-        if (!$solicitud || $solicitud['ESTADO'] !== 'ANTICIPO_PENDIENTE_APROBACION') {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if (!$solicitud || $solicitud['NODO_ACTUAL'] !== 'anticipo_aprobacion') {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'ANTICIPO_APROBADO');
+            $nodoSiguiente = 'causacion';
 
             GastoRepository::actualizarEstadoAnticipo($idSolicitud, 'APROBADO', null, $usuario['id']);
-            GastoRepository::cambiarEstado($idSolicitud, 'ANTICIPO_APROBADO');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'ANTICIPO_APROBADO',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'APROBAR_ANTICIPO', 'Anticipo aprobado.', $usuario['id']);
 
             Respuesta::ok(null, 'Anticipo aprobado.');
@@ -88,17 +86,17 @@ class AnticipoHandler
         }
 
         $solicitud = GastoRepository::obtenerSolicitud($idSolicitud);
-        if (!$solicitud || $solicitud['ESTADO'] !== 'ANTICIPO_PENDIENTE_APROBACION') {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if (!$solicitud || $solicitud['NODO_ACTUAL'] !== 'anticipo_aprobacion') {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'ANTICIPO_RECHAZADO');
+            $nodoSiguiente = 'rechazado_anticipo';
 
             GastoRepository::actualizarEstadoAnticipo($idSolicitud, 'RECHAZADO', $motivo, $usuario['id']);
-            GastoRepository::cambiarEstado($idSolicitud, 'ANTICIPO_RECHAZADO');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'ANTICIPO_RECHAZADO',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'RECHAZAR_ANTICIPO', $motivo, $usuario['id']);
 
             Respuesta::ok(null, 'Anticipo rechazado.');

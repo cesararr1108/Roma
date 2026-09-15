@@ -79,8 +79,6 @@ if (empty($_SESSION['ses_Login'])) {
         <div><p class="text-slate-500">Tipo de solicitud</p><p id="detalle-valor" class="font-medium">-</p></div>
       </div>
 
-      <div id="detalle-stepper" class="flex items-start"></div>
-
       <div id="detalle-accion-actual" class="border border-slate-200 rounded-xl p-4"></div>
       <div id="detalle-otras-acciones"></div>
 
@@ -91,24 +89,33 @@ if (empty($_SESSION['ses_Login'])) {
     </div>
   </div>
 
-  <!-- Núcleo compartido -->
+  <!-- Núcleo: cliente HTTP, motor de flujo (Nodo/FlowEngine/MotorFlujo), utilidades -->
   <script src="../controllers/core/apiClient.js"></script>
-  <script src="../controllers/core/estadoRegistry.js"></script>
+  <script src="../controllers/core/roles.js"></script>
+  <script src="../controllers/core/Nodo.js"></script>
+  <script src="../controllers/core/FlowEngine.js"></script>
+  <script src="../controllers/core/MotorFlujo.js"></script>
   <script src="../controllers/core/formatters.js"></script>
   <script src="../controllers/core/ui.js"></script>
   <script src="../controllers/core/plantillas.js"></script>
   <script src="../controllers/core/fragmentosFormulario.js"></script>
 
-  <!-- Módulos independientes por paso del flujo -->
-  <script src="../controllers/modules/solicitud.module.js"></script>
-  <script src="../controllers/modules/aprobacionCotizacion.module.js"></script>
-  <script src="../controllers/modules/decisionGasto.module.js"></script>
-  <script src="../controllers/modules/anticipoAprobacion.module.js"></script>
-  <script src="../controllers/modules/legalizarAnticipo.module.js"></script>
-  <script src="../controllers/modules/aprobacionSoporte.module.js"></script>
-  <script src="../controllers/modules/causacion.module.js"></script>
-  <script src="../controllers/modules/pago.module.js"></script>
-  <script src="../controllers/modules/compensacion.module.js"></script>
+  <!-- Nodos: un componente independiente por paso del flujo (se auto-registran al cargar) -->
+  <script src="../controllers/nodos/solicitud.nodo.js"></script>
+  <script src="../controllers/nodos/aprobacionCotizacion.nodo.js"></script>
+  <script src="../controllers/nodos/decisionAnticipoFactura.nodo.js"></script>
+  <script src="../controllers/nodos/anticipoDatos.nodo.js"></script>
+  <script src="../controllers/nodos/anticipoAprobacion.nodo.js"></script>
+  <script src="../controllers/nodos/facturaDatos.nodo.js"></script>
+  <script src="../controllers/nodos/aprobacionSoporte.nodo.js"></script>
+  <script src="../controllers/nodos/causacion.nodo.js"></script>
+  <script src="../controllers/nodos/pago.nodo.js"></script>
+  <script src="../controllers/nodos/legalizacion.nodo.js"></script>
+  <script src="../controllers/nodos/compensacion.nodo.js"></script>
+  <script src="../controllers/nodos/cruzado.nodo.js"></script>
+
+  <!-- Grafo del flujo (arma el FlowEngine con los nodos ya registrados arriba) -->
+  <script src="../controllers/flujos/flujoControlGastos.js"></script>
 
   <!-- Orquestador -->
   <script src="../controllers/ControlGastos.js"></script>

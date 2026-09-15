@@ -52,10 +52,13 @@ const UI = (() => {
     }
   };
 
-  const badgeEstado = (estadoInfo) => {
-    const color = (estadoInfo && estadoInfo.color) || 'slate';
-    const nombre = estadoInfo ? estadoInfo.nombre : 'Desconocido';
-    return `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-${color}-100 text-${color}-700 border border-${color}-200">${nombre}</span>`;
+  /** @param {Nodo|null} nodo El nodo actual de la solicitud, o null si ya llegó a un punto final. */
+  const badgeNodo = (nodo) => {
+    if (!nodo) {
+      return '<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">Finalizado</span>';
+    }
+    const color = nodo.id.startsWith('rechazado_') ? 'red' : 'indigo';
+    return `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-${color}-100 text-${color}-700 border border-${color}-200">${nodo.nombre}</span>`;
   };
 
   /** Modal simple para pedir un texto obligatorio (p. ej. motivo de rechazo). */
@@ -85,5 +88,5 @@ const UI = (() => {
     });
   });
 
-  return { toast, mostrarCargando, ocultarCargando, badgeEstado, pedirTexto };
+  return { toast, mostrarCargando, ocultarCargando, badgeNodo, pedirTexto };
 })();

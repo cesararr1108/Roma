@@ -1,8 +1,10 @@
 <?php
 /**
- * Consultas de lectura: catálogos iniciales, bandeja de trabajo, detalle
- * de una solicitud (incluye viáticos cuando aplica) y datos de apoyo
- * (terceros, conceptos, oficinas, datos del usuario logueado).
+ * Consultas de lectura: catálogos iniciales, bandeja de trabajo, y el
+ * contexto completo de una solicitud (lo que MotorFlujo.js necesita
+ * para decidir qué nodo pintar). Ninguna de ellas decide qué sigue --
+ * solo entregan datos ya guardados, remapeados a un formato cómodo
+ * para el JS (camelCase) en vez de las columnas crudas de la tabla.
  */
 class ConsultaHandler
 {
@@ -12,7 +14,6 @@ class ConsultaHandler
 
         Respuesta::ok(array(
             'usuario'                  => $usuario,
-            'estados'                  => Config::estados(),
             'tiposGasto'               => Config::tiposGasto(),
             'tiposAnticipo'            => Config::tiposAnticipo(),
             'organizaciones'           => Config::organizaciones(),
@@ -32,7 +33,7 @@ class ConsultaHandler
         Respuesta::ok(GastoRepository::listarBandeja($usuario, $filtro));
     }
 
-    public static function obtenerSolicitud()
+    public static function obtenerContexto()
     {
         Auth::usuarioActual();
         $idSolicitud = isset($_POST['idSolicitud']) ? (int) $_POST['idSolicitud'] : 0;
@@ -46,21 +47,47 @@ class ConsultaHandler
             Respuesta::error('La solicitud no existe.', 404);
         }
 
-        $solicitud['cotizaciones'] = GastoRepository::cotizacionesDeSolicitud($idSolicitud);
-        $solicitud['anticipo']     = GastoRepository::obtenerAnticipo($idSolicitud);
-        $solicitud['factura']      = GastoRepository::obtenerFactura($idSolicitud);
-        $solicitud['causacion']    = GastoRepository::obtenerCausacion($idSolicitud);
-        $solicitud['pago']         = GastoRepository::obtenerPago($idSolicitud);
-        $solicitud['compensacion'] = GastoRepository::obtenerCompensacion($idSolicitud);
-        $solicitud['historial']    = FlujoRepository::historial($idSolicitud);
-        $solicitud['estadoInfo']   = Config::estado($solicitud['ESTADO']);
+        $contexto = array(
+            'idSolicitud'        => (int) $solicitud['ID'],
+            'nodoActual'         => $solicitud['NODO_ACTUAL'],
+            'tipoGasto'          => (int) $solicitud['TIPO_GASTO'],
+            'tipoAnticipo'       => $solicitud['TIPO_ANTICIPO'],
+            'idConcepto'         => (int) $solicitud['ID_CONCEPTO'],
+            'nombreConcepto'     => $solicitud['NOMBRE_CONCEPTO'],
+            'requiereSoporte'    => (int) $solicitud['REQUIERE_SOPORTE'],
+            'requiereAnticipo'   => (int) $solicitud['REQUIERE_ANTICIPO'],
+            'comentarioSolicita' => $solicitud['COMENTARIO_SOLICITA'],
+            'idUsuarioSolicita'  => (int) $solicitud['ID_USUARIO_SOLICITA'],
+            'nombreSolicitante'  => $solicitud['NOMBRE_SOLICITANTE'],
+            'organizacionVentas' => $solicitud['ORGANIZACION_VENTAS'],
+            'oficinaVentas'      => $solicitud['OFICINA_VENTAS'],
+            'fechaCreacion'      => $solicitud['FECHA_CREACION'],
+            'fechaModificacion'  => $solicitud['FECHA_MODIFICACION'],
+            'cotizaciones'       => GastoRepository::cotizacionesDeSolicitud($idSolicitud),
+            'anticipo'           => GastoRepository::obtenerAnticipo($idSolicitud),
+            'factura'            => GastoRepository::obtenerFactura($idSolicitud),
+            'causacion'          => GastoRepository::obtenerCausacion($idSolicitud),
+            'pago'               => GastoRepository::obtenerPago($idSolicitud),
+            'compensacion'       => GastoRepository::obtenerCompensacion($idSolicitud),
+            'cruce'              => GastoRepository::obtenerCruce($idSolicitud),
+            'historial'          => FlujoRepository::historial($idSolicitud),
+        );
+
+        // Banderas informativas para Nodo.resolverSiguiente() (stepper, ayudas de UI) -- no son
+        // la autoridad de ningún avance real, eso lo decide cada acción del backend por su cuenta.
+        $aprobacionCotizacion = GastoRepository::obtenerAprobacionCotizacion($idSolicitud);
+        $aprobacionSoporte    = GastoRepository::obtenerAprobacionSoporte($idSolicitud);
+        $contexto['cotizacionAprobada'] = $aprobacionCotizacion && $aprobacionCotizacion['ESTADO'] === 'APROBADO';
+        $contexto['anticipoAprobado']   = $contexto['anticipo'] && $contexto['anticipo']['ESTADO_APROBACION'] === 'APROBADO';
+        $contexto['soporteAprobado']    = $aprobacionSoporte && $aprobacionSoporte['ESTADO'] === 'APROBADO';
+        $contexto['yaCausado']          = $contexto['causacion'] !== null;
 
         if ($solicitud['TIPO_ANTICIPO'] === Config::TIPO_ANTICIPO_VIATICOS) {
-            $solicitud['viaticosSolicitud']    = ViaticosRepository::obtenerSolicitud($idSolicitud);
-            $solicitud['viaticosLegalizacion'] = ViaticosRepository::obtenerLegalizacion($idSolicitud);
+            $contexto['viaticosSolicitud']    = ViaticosRepository::obtenerSolicitud($idSolicitud);
+            $contexto['viaticosLegalizacion'] = ViaticosRepository::obtenerLegalizacion($idSolicitud);
         }
 
-        Respuesta::ok($solicitud);
+        Respuesta::ok($contexto);
     }
 
     public static function buscarTercero()
@@ -88,7 +115,7 @@ class ConsultaHandler
 
     public static function crearConcepto()
     {
-        $usuario = Auth::usuarioActual();
+        Auth::usuarioActual();
         $concepto = isset($_POST['concepto']) ? trim($_POST['concepto']) : '';
 
         if ($concepto === '') {

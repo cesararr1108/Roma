@@ -1,18 +1,16 @@
 /**
- * Orquestador principal del módulo de Control de Gastos.
- *
- * Carga el contexto de sesión/catálogos, pinta la bandeja de trabajo y,
- * para el detalle de cada solicitud, delega la UI/acción del paso actual
- * al módulo registrado para ESTADO (ver core/estadoRegistry.js y
- * controllers/modules/*.module.js). Este archivo nunca contiene lógica
- * propia de un paso del flujo -- solo enruta.
+ * Orquestador principal. Carga catálogos, pinta la bandeja de trabajo y,
+ * al abrir una solicitud, delega TODO el detalle a un MotorFlujo -- este
+ * archivo no sabe qué nodos existen ni qué hace cada uno.
  */
 const ControlGastosApp = (() => {
   let usuarioContexto = null;
   let filtroActivo = 'mias';
   let solicitudActivaId = null;
+  let motor = null;
 
   const NOMBRES_TIPO_GASTO = { 1: 'Cotización', 2: 'Factura de gasto', 3: 'Anticipo' };
+  const NODOS_RECHAZO = ['rechazado_cotizacion', 'rechazado_anticipo', 'rechazado_soporte'];
 
   const iniciar = () => {
     UI.mostrarCargando();
@@ -45,14 +43,6 @@ const ControlGastosApp = (() => {
     document.getElementById('usuario-actual-nombre').textContent = usuarioContexto.usuario.nombre || usuarioContexto.usuario.login;
   };
 
-  const construirUsuarioUI = () => ({
-    id: usuarioContexto.usuario.id,
-    rolId: usuarioContexto.usuario.rolId,
-    esGerenciaAdministrativa: usuarioContexto.esGerenciaAdministrativa,
-    esContabilidad: usuarioContexto.esContabilidad,
-    esTesoreria: usuarioContexto.esTesoreria,
-  });
-
   const cargarBandeja = () => {
     const cuerpoTabla = document.getElementById('cuerpo-tabla-bandeja');
     cuerpoTabla.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-slate-400 text-sm">Cargando...</td></tr>';
@@ -62,21 +52,29 @@ const ControlGastosApp = (() => {
       .catch((err) => UI.toast(err.mensaje, 'error'));
   };
 
+  /** "Pendientes por mí" se filtra en el navegador con Nodo.puedeEditar() -- el backend no sabe qué rol atiende qué nodo. */
+  const filaEsPendienteParaMi = (fila) => {
+    if (!RegistroNodos.has(fila.NODO_ACTUAL)) return false;
+    const nodo = RegistroNodos.get(fila.NODO_ACTUAL);
+    return nodo.puedeEditar(usuarioContexto.usuario, { idUsuarioSolicita: fila.ID_USUARIO_SOLICITA });
+  };
+
   const pintarBandeja = (solicitudes) => {
     const cuerpoTabla = document.getElementById('cuerpo-tabla-bandeja');
+    const filas = filtroActivo === 'pendientes' ? solicitudes.filter(filaEsPendienteParaMi) : solicitudes;
 
-    if (!solicitudes.length) {
+    if (!filas.length) {
       cuerpoTabla.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400 text-sm">No hay solicitudes para mostrar.</td></tr>';
       return;
     }
 
-    cuerpoTabla.innerHTML = solicitudes.map((s) => `
+    cuerpoTabla.innerHTML = filas.map((s) => `
       <tr class="hover:bg-slate-50 cursor-pointer border-b border-slate-100" data-id-solicitud="${s.ID}">
         <td class="py-3 px-4 text-sm font-medium text-slate-700">${Formato.consecutivo(s.ID)}</td>
         <td class="py-3 px-4 text-sm text-slate-600">${s.NOMBRE_CONCEPTO || '-'}</td>
         <td class="py-3 px-4 text-sm text-slate-600">${NOMBRES_TIPO_GASTO[s.TIPO_GASTO] || '-'}</td>
         <td class="py-3 px-4 text-sm text-slate-600">${s.NOMBRE_SOLICITANTE || '-'}</td>
-        <td class="py-3 px-4">${UI.badgeEstado(usuarioContexto.estados[s.ESTADO])}</td>
+        <td class="py-3 px-4">${UI.badgeNodo(nodoOFinalizado(s.NODO_ACTUAL))}</td>
         <td class="py-3 px-4 text-sm text-slate-500">${Formato.fecha(s.FECHA_CREACION)}</td>
       </tr>`).join('');
 
@@ -85,54 +83,44 @@ const ControlGastosApp = (() => {
     });
   };
 
+  const nodoOFinalizado = (idNodo) => (RegistroNodos.has(idNodo) ? RegistroNodos.get(idNodo) : null);
+
   const abrirDetalle = (idSolicitud) => {
     solicitudActivaId = idSolicitud;
     document.getElementById('panel-detalle').classList.remove('hidden');
-    cargarDetalle();
+
+    motor = new MotorFlujo(FlujoControlGastos, usuarioContexto.usuario);
+    motor.iniciar(idSolicitud, document.getElementById('detalle-accion-actual'), document.getElementById('detalle-historial'))
+      .then(pintarCabeceraDetalle);
   };
 
   const cerrarDetalle = () => {
     solicitudActivaId = null;
+    motor = null;
     document.getElementById('panel-detalle').classList.add('hidden');
   };
 
-  const cargarDetalle = () => {
-    if (!solicitudActivaId) return;
+  const pintarCabeceraDetalle = () => {
+    if (!motor || !motor.contexto) return;
+    const c = motor.contexto;
 
-    UI.mostrarCargando();
-    enviarPeticion(ControlGastosApi.LINK_MODELO, 'obtener_solicitud', { idSolicitud: solicitudActivaId })
-      .then((resp) => pintarDetalle(resp.datos))
-      .catch((err) => UI.toast(err.mensaje, 'error'))
-      .finally(() => UI.ocultarCargando());
+    document.getElementById('detalle-titulo').textContent = `${Formato.consecutivo(c.idSolicitud)} · ${c.nombreConcepto || ''}`;
+    document.getElementById('detalle-badge-estado').innerHTML = UI.badgeNodo(nodoOFinalizado(c.nodoActual));
+    document.getElementById('detalle-valor').textContent = NOMBRES_TIPO_GASTO[c.tipoGasto] || '-';
+    document.getElementById('detalle-solicitante').textContent = c.nombreSolicitante || '-';
+
+    pintarOtrasAcciones(c);
   };
 
-  const pintarDetalle = (solicitud) => {
-    document.getElementById('detalle-titulo').textContent = `${Formato.consecutivo(solicitud.ID)} · ${solicitud.NOMBRE_CONCEPTO || ''}`;
-    document.getElementById('detalle-badge-estado').innerHTML = UI.badgeEstado(solicitud.estadoInfo);
-    document.getElementById('detalle-valor').textContent = NOMBRES_TIPO_GASTO[solicitud.TIPO_GASTO] || '-';
-    document.getElementById('detalle-solicitante').textContent = solicitud.NOMBRE_SOLICITANTE || '-';
-
-    pintarStepper(solicitud);
-    pintarHistorial(solicitud.historial || []);
-
-    const usuarioUI = construirUsuarioUI();
-    const contenedorAccion = document.getElementById('detalle-accion-actual');
-    const modulo = RegistroEstados.obtener(solicitud.ESTADO);
-
-    if (modulo) {
-      modulo.render(contenedorAccion, solicitud, usuarioUI, cargarDetalle);
-    } else {
-      contenedorAccion.innerHTML = PlantillaEspera('El sistema', 'el flujo ha finalizado y no requiere más acciones.');
-    }
-
-    pintarOtrasAcciones(solicitud, usuarioUI);
-  };
-
-  /** Reapertura (sobre estados *_RECHAZADA) y observación libre, disponibles según el rol/estado. */
-  const pintarOtrasAcciones = (solicitud, usuarioUI) => {
+  /** Reapertura (sobre nodos de rechazo) y observación libre. */
+  const pintarOtrasAcciones = (contexto) => {
     const contenedor = document.getElementById('detalle-otras-acciones');
-    const puedeReabrir = usuarioUI.esGerenciaAdministrativa && solicitud.estadoInfo && solicitud.estadoInfo.reabreA;
-    const puedeObservar = solicitud.estadoInfo && (solicitud.estadoInfo.rolesResponsables || []).includes(usuarioUI.rolId);
+    const usuario = usuarioContexto.usuario;
+
+    const rolesConAcceso = [].concat(ROLES.GERENCIA_ADMINISTRATIVA, ROLES.CONTABILIDAD, ROLES.TESORERIA);
+    const esDueno = Number(contexto.idUsuarioSolicita) === Number(usuario.id);
+    const puedeObservar = esDueno || rolesConAcceso.includes(usuario.rolId);
+    const puedeReabrir = ROLES.GERENCIA_ADMINISTRATIVA.includes(usuario.rolId) && NODOS_RECHAZO.includes(contexto.nodoActual);
 
     if (!puedeReabrir && !puedeObservar) {
       contenedor.innerHTML = '';
@@ -150,12 +138,7 @@ const ControlGastosApp = (() => {
       btnObservacion.addEventListener('click', async () => {
         const comentario = await UI.pedirTexto('Agregar observación', 'Observación');
         if (!comentario) return;
-
-        UI.mostrarCargando();
-        enviarPeticion(ControlGastosApi.LINK_MODELO, 'agregar_observacion', { idSolicitud: solicitud.ID, comentario })
-          .then((resp) => { UI.toast(resp.mensaje, 'exito'); cargarDetalle(); })
-          .catch((err) => UI.toast(err.mensaje, 'error'))
-          .finally(() => UI.ocultarCargando());
+        motor.avanzar('agregar_observacion', { idSolicitud: contexto.idSolicitud, comentario }).then(pintarCabeceraDetalle);
       });
     }
 
@@ -163,59 +146,13 @@ const ControlGastosApp = (() => {
     if (btnReabrir) {
       btnReabrir.addEventListener('click', async () => {
         const comentario = await UI.pedirTexto('Reabrir solicitud', 'Comentario (opcional)');
-        UI.mostrarCargando();
-        enviarPeticion(ControlGastosApi.LINK_MODELO, 'reabrir_solicitud', { idSolicitud: solicitud.ID, comentario: comentario || '' })
-          .then((resp) => { UI.toast(resp.mensaje, 'exito'); cargarDetalle(); cargarBandeja(); })
-          .catch((err) => UI.toast(err.mensaje, 'error'))
-          .finally(() => UI.ocultarCargando());
+        motor.avanzar('reabrir_solicitud', { idSolicitud: contexto.idSolicitud, comentario: comentario || '' })
+          .then(() => { pintarCabeceraDetalle(); cargarBandeja(); });
       });
     }
   };
 
-  const pintarStepper = (solicitud) => {
-    const requiereAnticipo = Number(solicitud.REQUIERE_ANTICIPO) === 1;
-    const esCotizacion = Number(solicitud.TIPO_GASTO) === 1;
-
-    const etapas = [
-      { n: 2, l: 'Aprobación cotización', mostrar: esCotizacion },
-      { n: 4, l: 'Aprobación anticipo', mostrar: requiereAnticipo },
-      { n: 5, l: 'Legalizar anticipo', mostrar: requiereAnticipo },
-      { n: 6, l: 'Aprobación factura', mostrar: true },
-      { n: 8, l: 'Causación', mostrar: true },
-      { n: 9, l: 'Pago', mostrar: true },
-      { n: 10, l: 'Compensación', mostrar: requiereAnticipo },
-      { n: 11, l: 'Finalizado', mostrar: true },
-    ];
-    const etapaActual = (solicitud.estadoInfo && solicitud.estadoInfo.etapa) || 0;
-    const visibles = etapas.filter((e) => e.mostrar);
-
-    document.getElementById('detalle-stepper').innerHTML = visibles.map((e) => {
-      const activo = e.n <= etapaActual;
-      const clase = activo ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-400';
-      return `
-        <div class="flex flex-col items-center gap-1 flex-1">
-          <div class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${clase}">✓</div>
-          <span class="text-[11px] text-center text-slate-500">${e.l}</span>
-        </div>`;
-    }).join('<div class="flex-1 h-px bg-slate-200 mt-3.5"></div>');
-  };
-
-  const pintarHistorial = (historial) => {
-    const contenedor = document.getElementById('detalle-historial');
-    if (!historial.length) {
-      contenedor.innerHTML = '<p class="text-sm text-slate-400">Sin movimientos registrados.</p>';
-      return;
-    }
-
-    contenedor.innerHTML = historial.map((h) => `
-      <div class="border-l-2 border-indigo-200 pl-3 pb-3">
-        <p class="text-xs text-slate-400">${Formato.fechaHora(h.FECHA)} · ${h.USUARIO || 'Usuario #' + h.ID_USUARIO}</p>
-        <p class="text-sm text-slate-700 font-medium">${String(h.ACCION).split('_').join(' ')}</p>
-        ${h.COMENTARIO ? `<p class="text-sm text-slate-500">${h.COMENTARIO}</p>` : ''}
-      </div>`).join('');
-  };
-
-  return { iniciar, cargarDetalle };
+  return { iniciar };
 })();
 
 document.addEventListener('DOMContentLoaded', ControlGastosApp.iniciar);

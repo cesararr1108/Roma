@@ -2,13 +2,14 @@
 /**
  * Modelo del módulo de Control de Gastos.
  *
- * Sigue el mismo patrón usado en el resto del sistema: session_start() +
- * conectar() + un switch("op") que atiende cada caso. La diferencia es
- * que aquí cada "case" delega en un Handler independiente (gastos/Handlers)
- * en vez de tener toda la lógica dentro del switch: así cada paso del
- * flujo (solicitud por tipo, aprobación de cotización, anticipo,
- * factura/legalización, causación, pago, compensación) se puede tocar o
- * extender sin afectar a los demás.
+ * Sigue el mismo patrón del resto del sistema: session_start() +
+ * conectar() + un switch("op") que atiende cada caso. Cada "case"
+ * delega en una función que SOLO guarda datos (insert/update) o sube
+ * un archivo -- el grafo del flujo (qué nodo sigue a cuál, quién puede
+ * ver o actuar en cada uno) vive en el navegador
+ * (controllers/core/FlowEngine.js + controllers/flujos/*.js). Este
+ * archivo es apenas el enrutador HTTP; no valida secuencias ni conoce
+ * el flujo completo.
  */
 session_start();
 require_once('funciones.php');
@@ -18,7 +19,6 @@ require_once(__DIR__.'/gastos/Config.php');
 require_once(__DIR__.'/gastos/Support/Respuesta.php');
 require_once(__DIR__.'/gastos/Support/Auth.php');
 require_once(__DIR__.'/gastos/Support/Db.php');
-require_once(__DIR__.'/gastos/Support/EstadoMachine.php');
 require_once(__DIR__.'/gastos/Support/ArchivoUploader.php');
 require_once(__DIR__.'/gastos/Support/SolicitudComun.php');
 require_once(__DIR__.'/gastos/Support/AnticipoDatos.php');
@@ -32,6 +32,7 @@ require_once(__DIR__.'/gastos/Handlers/SolicitudCotizacionHandler.php');
 require_once(__DIR__.'/gastos/Handlers/SolicitudFacturaHandler.php');
 require_once(__DIR__.'/gastos/Handlers/SolicitudAnticipoHandler.php');
 require_once(__DIR__.'/gastos/Handlers/AprobacionHandler.php');
+require_once(__DIR__.'/gastos/Handlers/ElegirRamaHandler.php');
 require_once(__DIR__.'/gastos/Handlers/AnticipoHandler.php');
 require_once(__DIR__.'/gastos/Handlers/FacturaHandler.php');
 require_once(__DIR__.'/gastos/Handlers/ViaticosHandler.php');
@@ -39,6 +40,7 @@ require_once(__DIR__.'/gastos/Handlers/AprobacionSoporteHandler.php');
 require_once(__DIR__.'/gastos/Handlers/CausacionHandler.php');
 require_once(__DIR__.'/gastos/Handlers/PagoHandler.php');
 require_once(__DIR__.'/gastos/Handlers/CompensacionHandler.php');
+require_once(__DIR__.'/gastos/Handlers/CruceHandler.php');
 require_once(__DIR__.'/gastos/Handlers/ReaperturaHandler.php');
 require_once(__DIR__.'/gastos/Handlers/ObservacionHandler.php');
 
@@ -55,8 +57,8 @@ switch ($op) {
         ConsultaHandler::listarBandeja();
         break;
 
-    case 'obtener_solicitud':
-        ConsultaHandler::obtenerSolicitud();
+    case 'obtener_contexto':
+        ConsultaHandler::obtenerContexto();
         break;
 
     case 'buscar_tercero':
@@ -79,7 +81,7 @@ switch ($op) {
         ConsultaHandler::datosUsuarioActual();
         break;
 
-    // ---------- Paso 1: creación de solicitud (una rama por tipo de gasto) ----------
+    // ---------- Creación de solicitud (una acción por tipo de gasto) ----------
     case 'crear_solicitud_cotizacion':
         SolicitudCotizacionHandler::crear();
         break;
@@ -92,7 +94,7 @@ switch ($op) {
         SolicitudAnticipoHandler::crear();
         break;
 
-    // ---------- Aprobación de cotización (gerencia administrativa) ----------
+    // ---------- Nodo: aprobacion_cotizacion ----------
     case 'aprobar_cotizacion':
         AprobacionHandler::aprobar();
         break;
@@ -101,7 +103,16 @@ switch ($op) {
         AprobacionHandler::rechazar();
         break;
 
-    // ---------- Rama anticipo (tras cotización aprobada) ----------
+    // ---------- Nodo: decision_anticipo_factura ----------
+    case 'elegir_rama_anticipo':
+        ElegirRamaHandler::elegirAnticipo();
+        break;
+
+    case 'elegir_rama_factura':
+        ElegirRamaHandler::elegirFactura();
+        break;
+
+    // ---------- Nodo: anticipo_datos / anticipo_aprobacion ----------
     case 'registrar_datos_anticipo':
         AnticipoHandler::registrarDatos();
         break;
@@ -114,17 +125,17 @@ switch ($op) {
         AnticipoHandler::rechazar();
         break;
 
-    // ---------- Rama factura (sin anticipo, o legalización bienes/servicios) ----------
+    // ---------- Nodo: factura_datos / legalizacion (rama bienes y servicios) ----------
     case 'registrar_factura':
         FacturaHandler::registrar();
         break;
 
-    // ---------- Rama legalización de viáticos ----------
+    // ---------- Nodo: legalizacion (rama viáticos) ----------
     case 'registrar_legalizacion_viaticos':
         ViaticosHandler::registrarLegalizacion();
         break;
 
-    // ---------- Aprobación de factura/legalización (gerencia administrativa) ----------
+    // ---------- Nodo: aprobacion_soporte ----------
     case 'aprobar_soporte':
         AprobacionSoporteHandler::aprobar();
         break;
@@ -133,27 +144,32 @@ switch ($op) {
         AprobacionSoporteHandler::rechazar();
         break;
 
-    // ---------- Causación (contabilidad) ----------
+    // ---------- Nodo: causacion ----------
     case 'registrar_causacion':
         CausacionHandler::registrar();
         break;
 
-    // ---------- Pago (tesorería) ----------
+    // ---------- Nodo: pago ----------
     case 'registrar_pago':
         PagoHandler::registrar();
         break;
 
-    // ---------- Compensación (contabilidad, solo con anticipo) ----------
+    // ---------- Nodo: compensacion (rama anticipo) ----------
     case 'registrar_compensacion':
         CompensacionHandler::registrar();
         break;
 
-    // ---------- Reapertura (gerencia administrativa) ----------
+    // ---------- Nodo: cruzado (rama factura) ----------
+    case 'registrar_cruce':
+        CruceHandler::registrar();
+        break;
+
+    // ---------- Reapertura de nodos rechazados ----------
     case 'reabrir_solicitud':
         ReaperturaHandler::reabrir();
         break;
 
-    // ---------- Observación sin cambio de estado ----------
+    // ---------- Observación sin cambio de nodo ----------
     case 'agregar_observacion':
         ObservacionHandler::agregar();
         break;

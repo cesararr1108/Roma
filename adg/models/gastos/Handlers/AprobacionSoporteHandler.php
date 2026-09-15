@@ -1,9 +1,14 @@
 <?php
 /**
- * Segunda aprobación de gerencia administrativa: sobre la factura
- * (directa, sin-anticipo, o legalización de bienes/servicios) o sobre la
- * legalización de viáticos. Todas llegan al mismo estado
- * SOPORTE_PENDIENTE_APROBACION, por eso un único handler las cubre.
+ * Nodo "aprobacion_soporte": gerencia administrativa aprueba o rechaza
+ * la factura o la legalización de viáticos -- llegan aquí desde dos
+ * puntos distintos del flujo (factura_datos, o legalizacion tras haber
+ * pasado ya por causación/pago), así que el siguiente nodo depende de
+ * cuál de los dos era: si ya existe una causación guardada para esta
+ * solicitud, es que viene de legalizar un anticipo y sigue a
+ * compensación; si no, es la primera vuelta y sigue a causación. Ese
+ * dato sale de una tabla que el propio servidor ya escribió antes --
+ * nunca de lo que mande el navegador.
  */
 class AprobacionSoporteHandler
 {
@@ -12,15 +17,16 @@ class AprobacionSoporteHandler
         $usuario = Auth::requiereRol(Config::rolesGerenciaAdministrativa());
         $idSolicitud = isset($_POST['idSolicitud']) ? (int) $_POST['idSolicitud'] : 0;
 
-        $solicitud = self::obtenerYValidarEstado($idSolicitud);
+        $solicitud = self::obtenerYValidarNodo($idSolicitud);
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'SOPORTE_APROBADO');
+            $yaCausado = GastoRepository::obtenerCausacion($idSolicitud) !== null;
+            $nodoSiguiente = $yaCausado ? 'compensacion' : 'causacion';
 
             GastoRepository::guardarAprobacionSoporte($idSolicitud, 'APROBADO', null, $usuario['id']);
-            GastoRepository::cambiarEstado($idSolicitud, 'SOPORTE_APROBADO');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'SOPORTE_APROBADO',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'APROBAR_SOPORTE', 'Factura/legalización aprobada.', $usuario['id']);
 
             Respuesta::ok(null, 'Factura/legalización aprobada.');
@@ -39,15 +45,15 @@ class AprobacionSoporteHandler
             Respuesta::error('Debe indicar el motivo del rechazo.');
         }
 
-        $solicitud = self::obtenerYValidarEstado($idSolicitud);
+        $solicitud = self::obtenerYValidarNodo($idSolicitud);
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'SOPORTE_RECHAZADO');
+            $nodoSiguiente = 'rechazado_soporte';
 
             GastoRepository::guardarAprobacionSoporte($idSolicitud, 'RECHAZADO', $motivo, $usuario['id']);
-            GastoRepository::cambiarEstado($idSolicitud, 'SOPORTE_RECHAZADO');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'SOPORTE_RECHAZADO',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'RECHAZAR_SOPORTE', $motivo, $usuario['id']);
 
             Respuesta::ok(null, 'Factura/legalización rechazada.');
@@ -56,14 +62,14 @@ class AprobacionSoporteHandler
         }
     }
 
-    private static function obtenerYValidarEstado($idSolicitud)
+    private static function obtenerYValidarNodo($idSolicitud)
     {
         $solicitud = GastoRepository::obtenerSolicitud($idSolicitud);
         if (!$solicitud) {
             Respuesta::error('La solicitud no existe.', 404);
         }
-        if ($solicitud['ESTADO'] !== 'SOPORTE_PENDIENTE_APROBACION') {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if ($solicitud['NODO_ACTUAL'] !== 'aprobacion_soporte') {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
         return $solicitud;
     }

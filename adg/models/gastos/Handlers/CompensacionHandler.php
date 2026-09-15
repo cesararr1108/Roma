@@ -1,7 +1,8 @@
 <?php
 /**
- * Paso 1.5 (solo rama anticipo): contabilidad registra el número de
- * compensación generado en SAP y el flujo finaliza.
+ * Nodo "compensacion" (solo rama anticipo, tras legalización aprobada):
+ * contabilidad registra el número de compensación generado en SAP.
+ * Siguiente nodo siempre fijo: "finalizado".
  */
 class CompensacionHandler
 {
@@ -16,22 +17,18 @@ class CompensacionHandler
         }
 
         $solicitud = GastoRepository::obtenerSolicitud($idSolicitud);
-        if (!$solicitud || $solicitud['ESTADO'] !== 'PAGADO' || (int) $solicitud['REQUIERE_ANTICIPO'] !== 1) {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if (!$solicitud || $solicitud['NODO_ACTUAL'] !== 'compensacion') {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'COMPENSADO');
-            EstadoMachine::validarTransicion('COMPENSADO', 'FINALIZADO');
+            $nodoSiguiente = 'finalizado';
 
             GastoRepository::guardarCompensacion($idSolicitud, $numeroCompensacion, $usuario['id']);
-            GastoRepository::cambiarEstado($idSolicitud, 'COMPENSADO');
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'COMPENSADO',
-                'REGISTRAR_COMPENSACION', 'Compensación '.$numeroCompensacion.'.', $usuario['id']);
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            GastoRepository::cambiarEstado($idSolicitud, 'FINALIZADO');
-            FlujoRepository::registrar($idSolicitud, 'COMPENSADO', 'FINALIZADO',
-                'FINALIZAR', 'Flujo finalizado.', $usuario['id']);
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
+                'REGISTRAR_COMPENSACION', 'Compensación '.$numeroCompensacion.'.', $usuario['id']);
 
             Respuesta::ok(null, 'Compensación registrada. El flujo ha finalizado.');
         } catch (Exception $e) {

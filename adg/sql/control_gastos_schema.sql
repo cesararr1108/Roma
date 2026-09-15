@@ -8,6 +8,13 @@
 --   T_USUARIOS, T_TERCEROS, T_DPTO, T_OFICINAS_VENTAS,
 --   T_CONCEPTOS_GASTOS, T_ROLES, T_ROLES_GASTOS_INFO
 -- Ajustar sus nombres/columnas si difieren de los documentados.
+--
+-- GTOS_SOLICITUDES.NODO_ACTUAL guarda el id del nodo del grafo de flujo
+-- que vive en controllers/core/FlowEngine.js + controllers/flujos/*.js
+-- (p. ej. 'aprobacion_cotizacion', 'causacion', 'pago'...). El backend
+-- no tiene un catálogo de nodos: cada acción en models/gastos/Handlers
+-- simplemente lee y escribe esta columna con el valor que le corresponde
+-- a ESA acción -- el grafo completo (quién sigue a quién) es del JS.
 -- =====================================================================
 
 CREATE TABLE GTOS_SOLICITUDES (
@@ -21,7 +28,7 @@ CREATE TABLE GTOS_SOLICITUDES (
     COMENTARIO_SOLICITA   NVARCHAR(1000)  NOT NULL,
     ID_USUARIO_SOLICITA   INT             NOT NULL,
     ID_DPTO               INT             NULL,
-    ESTADO                VARCHAR(40)     NOT NULL,
+    NODO_ACTUAL           VARCHAR(40)     NOT NULL,   -- id del nodo activo del grafo (ver FlowEngine.js)
     REQUIERE_ANTICIPO     BIT             NOT NULL DEFAULT 0,
     FECHA_CREACION        DATETIME        NOT NULL DEFAULT GETDATE(),
     FECHA_MODIFICACION    DATETIME        NOT NULL DEFAULT GETDATE()
@@ -209,14 +216,24 @@ CREATE TABLE GTOS_COMPENSACION (
 );
 GO
 
--- Bitácora general: TODOS los cambios de estado, motivos y comentarios del flujo,
--- incluidas las observaciones que un rol puede dejar sin cambiar de estado
--- (equivalente a los "no causado / no pagado / no compensado" del legacy).
+-- Nodo "cruzado" (rama factura, sin anticipo): cierre contable equivalente
+-- a la compensación, pero para solicitudes que nunca tuvieron anticipo.
+CREATE TABLE GTOS_CRUCE (
+    ID              INT IDENTITY(1,1) PRIMARY KEY,
+    ID_SOLICITUD    INT NOT NULL UNIQUE REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
+    NUMERO_CRUCE    VARCHAR(50) NOT NULL,
+    ID_USUARIO      INT NOT NULL,
+    FECHA           DATETIME NOT NULL DEFAULT GETDATE()
+);
+GO
+
+-- Bitácora general: TODOS los cambios de nodo, motivos y comentarios del flujo,
+-- incluidas las observaciones que se pueden dejar sin cambiar de nodo.
 CREATE TABLE GTOS_FLUJO_HISTORIAL (
     ID               INT IDENTITY(1,1) PRIMARY KEY,
     ID_SOLICITUD     INT NOT NULL REFERENCES GTOS_SOLICITUDES(ID) ON DELETE CASCADE,
-    ESTADO_ANTERIOR  VARCHAR(40) NULL,
-    ESTADO_NUEVO     VARCHAR(40) NOT NULL,
+    NODO_ANTERIOR    VARCHAR(40) NULL,
+    NODO_NUEVO       VARCHAR(40) NOT NULL,
     ACCION           VARCHAR(60) NOT NULL,
     COMENTARIO       NVARCHAR(1000) NULL,
     ID_USUARIO       INT NOT NULL,
@@ -224,7 +241,7 @@ CREATE TABLE GTOS_FLUJO_HISTORIAL (
 );
 GO
 
-CREATE INDEX IX_GTOS_SOLICITUDES_ESTADO   ON GTOS_SOLICITUDES(ESTADO);
+CREATE INDEX IX_GTOS_SOLICITUDES_NODO     ON GTOS_SOLICITUDES(NODO_ACTUAL);
 CREATE INDEX IX_GTOS_SOLICITUDES_USUARIO  ON GTOS_SOLICITUDES(ID_USUARIO_SOLICITA);
 CREATE INDEX IX_GTOS_SOLICITUDES_ORG      ON GTOS_SOLICITUDES(ORGANIZACION_VENTAS, OFICINA_VENTAS);
 CREATE INDEX IX_GTOS_FLUJO_HISTORIAL_SOL  ON GTOS_FLUJO_HISTORIAL(ID_SOLICITUD);

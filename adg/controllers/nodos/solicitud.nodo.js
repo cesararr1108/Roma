@@ -1,10 +1,10 @@
 /**
- * Módulo de creación de solicitud (los 3 tipos: cotización, factura,
- * anticipo). No está atado a un estado del backend -- es el punto de
- * entrada del flujo -- por eso expone su propio abrirModal() en vez de
- * registrarse en RegistroEstados. Reutiliza los fragmentos de factura y
- * anticipo (ver core/fragmentosFormulario.js) porque son los mismos
- * campos que se piden más adelante en el flujo.
+ * Punto de entrada del flujo: crear una solicitud (los 3 tipos:
+ * cotización, factura, anticipo). No es un nodo del grafo -- es lo que
+ * existe ANTES de que haya un nodo -- por eso se invoca directo desde
+ * la bandeja ("Nueva solicitud"), no a través de MotorFlujo. Reutiliza
+ * los mismos fragmentos de factura y anticipo que el resto del flujo
+ * (ver core/fragmentosFormulario.js), porque piden los mismos campos.
  */
 const ModuloSolicitud = (() => {
 

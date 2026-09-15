@@ -1,8 +1,7 @@
 <?php
 /**
  * Creación de una solicitud tipo FACTURA DE GASTO: no requiere
- * cotizaciones ni la aprobación previa de gerencia administrativa sobre
- * una cotización -- arranca directo en la aprobación de la factura.
+ * cotizaciones -- arranca directo en el nodo "aprobacion_soporte".
  */
 class SolicitudFacturaHandler
 {
@@ -13,18 +12,18 @@ class SolicitudFacturaHandler
         $datosFactura = FacturaDatos::leerYValidar();
 
         try {
-            $estadoInicial = Config::estadoInicial(Config::TIPO_GASTO_FACTURA);
+            $nodoInicial = 'aprobacion_soporte';
 
             $idSolicitud = GastoRepository::crearSolicitud(array_merge($comunes, array(
                 'tipoGasto'        => Config::TIPO_GASTO_FACTURA,
                 'tipoAnticipo'     => null,
-                'estado'           => $estadoInicial,
+                'nodoInicial'      => $nodoInicial,
                 'requiereAnticipo' => 0,
             )));
 
             GastoRepository::guardarFactura($idSolicitud, $datosFactura);
 
-            FlujoRepository::registrar($idSolicitud, null, $estadoInicial,
+            FlujoRepository::registrar($idSolicitud, null, $nodoInicial,
                 'SOLICITUD_CREADA', 'Solicitud de factura creada por un total de '.$datosFactura['total'].'.', $usuario['id']);
 
             Respuesta::ok(array('idSolicitud' => $idSolicitud, 'total' => $datosFactura['total']), 'Solicitud enviada a aprobación.');

@@ -1,8 +1,7 @@
 <?php
 /**
- * Contabilidad causa la solicitud, sin importar si llegó por factura
- * directa, cotización sin anticipo, o legalización de anticipo (todas
- * confluyen en SOPORTE_APROBADO antes de este paso).
+ * Nodo "causacion": contabilidad causa la solicitud. Siguiente nodo
+ * siempre fijo: "pago".
  */
 class CausacionHandler
 {
@@ -18,17 +17,17 @@ class CausacionHandler
         }
 
         $solicitud = GastoRepository::obtenerSolicitud($idSolicitud);
-        if (!$solicitud || $solicitud['ESTADO'] !== 'SOPORTE_APROBADO') {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if (!$solicitud || $solicitud['NODO_ACTUAL'] !== 'causacion') {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'CAUSADO');
+            $nodoSiguiente = 'pago';
 
             GastoRepository::guardarCausacion($idSolicitud, $numeroCausacion, $nota, $usuario['id']);
-            GastoRepository::cambiarEstado($idSolicitud, 'CAUSADO');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'CAUSADO',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'REGISTRAR_CAUSACION', 'Causación '.$numeroCausacion.'. '.$nota, $usuario['id']);
 
             Respuesta::ok(null, 'Causación registrada correctamente.');

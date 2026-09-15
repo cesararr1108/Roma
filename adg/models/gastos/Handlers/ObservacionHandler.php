@@ -1,10 +1,8 @@
 <?php
 /**
- * Observación sin cambio de estado: cubre el "no causado / no pagado /
- * no compensado" del legacy sin inventar estados de devolución nuevos --
- * el rol responsable simplemente deja un comentario en la bitácora
- * (visible para el solicitante) y la solicitud sigue en su misma cola de
- * trabajo para reintentar la acción.
+ * Observación sin cambio de nodo: cualquiera de los roles que participan
+ * del flujo (o el dueño) puede dejar una nota en la bitácora sin mover
+ * la solicitud, para dejar constancia de algo sin bloquear el paso.
  */
 class ObservacionHandler
 {
@@ -23,11 +21,18 @@ class ObservacionHandler
             Respuesta::error('La solicitud no existe.', 404);
         }
 
-        if (!EstadoMachine::esResponsable($solicitud['ESTADO'], $usuario['rolId'])) {
-            Respuesta::error('No tiene permisos para dejar observaciones en el estado actual de esta solicitud.', 403);
+        $rolesConAcceso = array_merge(
+            Config::rolesGerenciaAdministrativa(),
+            Config::rolesContabilidad(),
+            Config::rolesTesoreria()
+        );
+        $esDueno = (int) $solicitud['ID_USUARIO_SOLICITA'] === (int) $usuario['id'];
+
+        if (!$esDueno && !in_array($usuario['rolId'], $rolesConAcceso, true)) {
+            Respuesta::error('No tiene permisos para dejar observaciones en esta solicitud.', 403);
         }
 
-        FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], $solicitud['ESTADO'],
+        FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $solicitud['NODO_ACTUAL'],
             'OBSERVACION', $comentario, $usuario['id']);
 
         Respuesta::ok(null, 'Observación registrada.');

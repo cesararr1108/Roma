@@ -1,9 +1,8 @@
 <?php
 /**
- * Creación de una solicitud tipo ANTICIPO: no requiere cotización previa,
- * queda pendiente de aprobación de gerencia administrativa directamente.
- * Si el sub-tipo es VIATICOS, exige además el formulario estructurado de
- * solicitud de viáticos (presupuesto por rubro).
+ * Creación de una solicitud tipo ANTICIPO: no requiere cotización previa
+ * -- arranca directo en el nodo "anticipo_aprobacion". Si el sub-tipo es
+ * VIATICOS, exige además el formulario F-FR-023 (solicitud de viáticos).
  */
 class SolicitudAnticipoHandler
 {
@@ -21,12 +20,12 @@ class SolicitudAnticipoHandler
         $datosViaticos = ($tipoAnticipo === Config::TIPO_ANTICIPO_VIATICOS) ? ViaticosDatos::leerSolicitudYValidar() : null;
 
         try {
-            $estadoInicial = Config::estadoInicial(Config::TIPO_GASTO_ANTICIPO);
+            $nodoInicial = 'anticipo_aprobacion';
 
             $idSolicitud = GastoRepository::crearSolicitud(array_merge($comunes, array(
                 'tipoGasto'        => Config::TIPO_GASTO_ANTICIPO,
                 'tipoAnticipo'     => $tipoAnticipo,
-                'estado'           => $estadoInicial,
+                'nodoInicial'      => $nodoInicial,
                 'requiereAnticipo' => 1,
             )));
 
@@ -36,7 +35,7 @@ class SolicitudAnticipoHandler
                 ViaticosRepository::guardarSolicitud($idSolicitud, $datosViaticos);
             }
 
-            FlujoRepository::registrar($idSolicitud, null, $estadoInicial,
+            FlujoRepository::registrar($idSolicitud, null, $nodoInicial,
                 'SOLICITUD_CREADA', 'Solicitud de anticipo creada para '.$datosAnticipo['nombreTercero'].'.', $usuario['id']);
 
             Respuesta::ok(array('idSolicitud' => $idSolicitud), 'Solicitud de anticipo enviada a aprobación.');

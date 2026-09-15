@@ -1,13 +1,9 @@
 <?php
 /**
  * Repositorio de persistencia del dominio "Gastos". Cada Handler llama
- * únicamente a estos métodos -- nunca escribe SQL directamente -- de modo
- * que el esquema de base de datos se pueda ajustar en un solo archivo.
- *
- * Ajustar nombres/columnas de las tablas maestras compartidas
- * (T_USUARIOS, T_TERCEROS, T_DPTO, T_OFICINAS_VENTAS, T_CONCEPTOS_GASTOS,
- * T_ROLES_GASTOS_INFO) si difieren de las documentadas en el módulo
- * legacy "WorkFlow".
+ * únicamente a estos métodos -- nunca escribe SQL directamente. No hay
+ * aquí ninguna validación de "a qué nodo se puede pasar": cada método
+ * simplemente guarda lo que el Handler ya decidió.
  */
 class GastoRepository
 {
@@ -20,11 +16,11 @@ class GastoRepository
         $sql = "INSERT INTO GTOS_SOLICITUDES
                     (ORGANIZACION_VENTAS, OFICINA_VENTAS, TIPO_GASTO, TIPO_ANTICIPO, ID_CONCEPTO,
                      REQUIERE_SOPORTE, COMENTARIO_SOLICITA, ID_USUARIO_SOLICITA, ID_DPTO,
-                     ESTADO, REQUIERE_ANTICIPO, FECHA_CREACION, FECHA_MODIFICACION)
+                     NODO_ACTUAL, REQUIERE_ANTICIPO, FECHA_CREACION, FECHA_MODIFICACION)
                 VALUES
                     (:organizacionVentas, :oficinaVentas, :tipoGasto, :tipoAnticipo, :idConcepto,
                      :requiereSoporte, :comentario, :idUsuario, :idDepartamento,
-                     :estado, :requiereAnticipo, GETDATE(), GETDATE());
+                     :nodoInicial, :requiereAnticipo, GETDATE(), GETDATE());
                 SELECT SCOPE_IDENTITY() AS ID;";
 
         return Db::nuevoId($sql, array(
@@ -37,16 +33,16 @@ class GastoRepository
             'comentario'         => $datos['comentario'],
             'idUsuario'          => $datos['idUsuario'],
             'idDepartamento'     => $datos['idDepartamento'],
-            'estado'             => $datos['estado'],
+            'nodoInicial'        => $datos['nodoInicial'],
             'requiereAnticipo'   => $datos['requiereAnticipo'] ? 1 : 0,
         ));
     }
 
-    public static function cambiarEstado($idSolicitud, $estadoNuevo)
+    public static function fijarNodo($idSolicitud, $nodoNuevo)
     {
         Db::ejecutar(
-            "UPDATE GTOS_SOLICITUDES SET ESTADO = :estado, FECHA_MODIFICACION = GETDATE() WHERE ID = :id",
-            array('estado' => $estadoNuevo, 'id' => $idSolicitud)
+            "UPDATE GTOS_SOLICITUDES SET NODO_ACTUAL = :nodo, FECHA_MODIFICACION = GETDATE() WHERE ID = :id",
+            array('nodo' => $nodoNuevo, 'id' => $idSolicitud)
         );
     }
 
@@ -54,7 +50,7 @@ class GastoRepository
     {
         $sql = "SELECT s.ID, s.ORGANIZACION_VENTAS, s.OFICINA_VENTAS, s.TIPO_GASTO, s.TIPO_ANTICIPO,
                        s.ID_CONCEPTO, s.REQUIERE_SOPORTE, s.COMENTARIO_SOLICITA,
-                       s.ESTADO, s.REQUIERE_ANTICIPO, s.ID_USUARIO_SOLICITA, s.ID_DPTO,
+                       s.NODO_ACTUAL, s.REQUIERE_ANTICIPO, s.ID_USUARIO_SOLICITA, s.ID_DPTO,
                        s.FECHA_CREACION, s.FECHA_MODIFICACION,
                        u.NOMBRES + ' ' + u.APELLIDOS AS NOMBRE_SOLICITANTE,
                        c.CONCEPTO AS NOMBRE_CONCEPTO
@@ -69,11 +65,10 @@ class GastoRepository
 
     /**
      * Bandeja de trabajo. 'mias' devuelve las solicitudes creadas por el
-     * usuario; 'pendientes' devuelve las que están en un estado cuyo rol
-     * responsable coincide con el rol del usuario actual (calculado a
-     * partir de Config::estados(), sin listas de estados hardcodeadas).
-     * Ambos filtros se acotan, además, a la organización de venta del
-     * usuario (salvo administrador, que ve todas).
+     * usuario. 'pendientes' devuelve todas las solicitudes ACTIVAS
+     * (no terminales) de la organización -- el propio navegador filtra,
+     * con el Nodo.puedeEditar() de cada fila, cuáles le corresponden a
+     * su rol. El backend no necesita saber qué rol atiende qué nodo.
      */
     public static function listarBandeja($usuario, $filtro)
     {
@@ -89,27 +84,17 @@ class GastoRepository
             $condiciones[] = 's.ID_USUARIO_SOLICITA = :idUsuario';
             $params['idUsuario'] = $usuario['id'];
         } else {
-            $estadosPorRol = array();
-            foreach (Config::estados() as $codigo => $definicion) {
-                if (in_array($usuario['rolId'], $definicion['rolesResponsables'], true)) {
-                    $estadosPorRol[] = $codigo;
-                }
-            }
-            if (empty($estadosPorRol)) {
-                return array();
-            }
-
             $marcadores = array();
-            foreach ($estadosPorRol as $indice => $codigo) {
-                $clave = 'estado'.$indice;
+            foreach (Config::NODOS_TERMINALES as $indice => $nodo) {
+                $clave = 'terminal'.$indice;
                 $marcadores[] = ':'.$clave;
-                $params[$clave] = $codigo;
+                $params[$clave] = $nodo;
             }
-            $condiciones[] = 's.ESTADO IN ('.implode(',', $marcadores).')';
+            $condiciones[] = 's.NODO_ACTUAL NOT IN ('.implode(',', $marcadores).')';
         }
 
-        $sql = "SELECT s.ID, s.TIPO_GASTO, s.TIPO_ANTICIPO, s.ESTADO, s.REQUIERE_ANTICIPO,
-                       s.FECHA_CREACION, c.CONCEPTO AS NOMBRE_CONCEPTO,
+        $sql = "SELECT s.ID, s.TIPO_GASTO, s.TIPO_ANTICIPO, s.NODO_ACTUAL, s.REQUIERE_ANTICIPO,
+                       s.ID_USUARIO_SOLICITA, s.FECHA_CREACION, c.CONCEPTO AS NOMBRE_CONCEPTO,
                        u.NOMBRES + ' ' + u.APELLIDOS AS NOMBRE_SOLICITANTE
                 FROM GTOS_SOLICITUDES s
                 LEFT JOIN T_USUARIOS u ON u.ID = s.ID_USUARIO_SOLICITA
@@ -174,6 +159,15 @@ class GastoRepository
                 array('id' => $idCotizacionAprobada)
             );
         }
+    }
+
+    /** Última decisión registrada sobre la cotización (para saber si fue aprobada o rechazada). */
+    public static function obtenerAprobacionCotizacion($idSolicitud)
+    {
+        $sql = "SELECT TOP 1 ESTADO, MOTIVO FROM GTOS_APROBACION_COTIZACION
+                WHERE ID_SOLICITUD = :id ORDER BY FECHA DESC, ID DESC";
+        $filas = Db::query($sql, array('id' => $idSolicitud));
+        return isset($filas[0]) ? $filas[0] : null;
     }
 
     // ---------------------------------------------------------------
@@ -304,8 +298,17 @@ class GastoRepository
         ));
     }
 
+    /** Última decisión registrada sobre la factura/legalización (para saber si fue aprobada o rechazada). */
+    public static function obtenerAprobacionSoporte($idSolicitud)
+    {
+        $sql = "SELECT TOP 1 ESTADO, MOTIVO FROM GTOS_APROBACION_SOPORTE
+                WHERE ID_SOLICITUD = :id ORDER BY FECHA DESC, ID DESC";
+        $filas = Db::query($sql, array('id' => $idSolicitud));
+        return isset($filas[0]) ? $filas[0] : null;
+    }
+
     // ---------------------------------------------------------------
-    // Causación, pago, compensación
+    // Causación, pago, compensación, cruce
     // ---------------------------------------------------------------
 
     public static function guardarCausacion($idSolicitud, $numero, $nota, $idUsuario)
@@ -362,6 +365,24 @@ class GastoRepository
     public static function obtenerCompensacion($idSolicitud)
     {
         $filas = Db::query("SELECT * FROM GTOS_COMPENSACION WHERE ID_SOLICITUD = :id", array('id' => $idSolicitud));
+        return isset($filas[0]) ? $filas[0] : null;
+    }
+
+    public static function guardarCruce($idSolicitud, $numeroCruce, $idUsuario)
+    {
+        $sql = "INSERT INTO GTOS_CRUCE (ID_SOLICITUD, NUMERO_CRUCE, ID_USUARIO, FECHA)
+                VALUES (:idSolicitud, :numero, :idUsuario, GETDATE())";
+
+        Db::ejecutar($sql, array(
+            'idSolicitud' => $idSolicitud,
+            'numero'      => $numeroCruce,
+            'idUsuario'   => $idUsuario,
+        ));
+    }
+
+    public static function obtenerCruce($idSolicitud)
+    {
+        $filas = Db::query("SELECT * FROM GTOS_CRUCE WHERE ID_SOLICITUD = :id", array('id' => $idSolicitud));
         return isset($filas[0]) ? $filas[0] : null;
     }
 

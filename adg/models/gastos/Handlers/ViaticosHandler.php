@@ -17,8 +17,8 @@ class ViaticosHandler
         }
         Auth::requiereDueno($solicitud['ID_USUARIO_SOLICITA']);
 
-        if ($solicitud['ESTADO'] !== 'ANTICIPO_APROBADO') {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if ($solicitud['NODO_ACTUAL'] !== 'legalizacion') {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
         if ($solicitud['TIPO_ANTICIPO'] !== Config::TIPO_ANTICIPO_VIATICOS) {
             Respuesta::error('Esta solicitud no corresponde a un anticipo de viáticos.');
@@ -107,14 +107,14 @@ class ViaticosHandler
         }
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'SOPORTE_PENDIENTE_APROBACION');
+            $nodoSiguiente = 'aprobacion_soporte';
 
             $resultado = ViaticosRepository::guardarLegalizacion(
                 $idSolicitud, $cabecera, $filasValidadas, (float) $anticipo['VALOR_ANTICIPO']
             );
-            GastoRepository::cambiarEstado($idSolicitud, 'SOPORTE_PENDIENTE_APROBACION');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'SOPORTE_PENDIENTE_APROBACION',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'REGISTRAR_LEGALIZACION_VIATICOS',
                 'Legalización registrada por '.$resultado['valorLegalizado'].' (saldo '.$resultado['saldo'].').', $usuario['id']);
 

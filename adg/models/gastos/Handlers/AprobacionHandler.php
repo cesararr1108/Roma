@@ -1,7 +1,9 @@
 <?php
 /**
- * Paso 1.1: gerencia administrativa aprueba (eligiendo la cotización
- * ganadora) o rechaza (con motivo) la solicitud.
+ * Nodo "aprobacion_cotizacion": gerencia administrativa aprueba
+ * (eligiendo la cotización ganadora) o rechaza. Precondición propia de
+ * esta acción: la solicitud debe estar en ese nodo -- eso no es "conocer
+ * el flujo", es una comprobación local de esta única acción.
  */
 class AprobacionHandler
 {
@@ -16,15 +18,15 @@ class AprobacionHandler
             Respuesta::error('Debe seleccionar la cotización aprobada.');
         }
 
-        $solicitud = self::obtenerYValidarEstado($idSolicitud, 'EN_APROBACION_COTIZACION');
+        $solicitud = self::obtenerYValidarNodo($idSolicitud, 'aprobacion_cotizacion');
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'COTIZACION_APROBADA');
+            $nodoSiguiente = 'decision_anticipo_factura';
 
             GastoRepository::guardarAprobacionCotizacion($idSolicitud, $idCotizacion, 'APROBADO', null, $usuario['id']);
-            GastoRepository::cambiarEstado($idSolicitud, 'COTIZACION_APROBADA');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'COTIZACION_APROBADA',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'APROBAR_COTIZACION', 'Cotización #'.$idCotizacion.' aprobada.', $usuario['id']);
 
             Respuesta::ok(null, 'Cotización aprobada correctamente.');
@@ -44,15 +46,15 @@ class AprobacionHandler
             Respuesta::error('Debe indicar el motivo del rechazo.');
         }
 
-        $solicitud = self::obtenerYValidarEstado($idSolicitud, 'EN_APROBACION_COTIZACION');
+        $solicitud = self::obtenerYValidarNodo($idSolicitud, 'aprobacion_cotizacion');
 
         try {
-            EstadoMachine::validarTransicion($solicitud['ESTADO'], 'COTIZACION_RECHAZADA');
+            $nodoSiguiente = 'rechazado_cotizacion';
 
             GastoRepository::guardarAprobacionCotizacion($idSolicitud, null, 'RECHAZADO', $motivo, $usuario['id']);
-            GastoRepository::cambiarEstado($idSolicitud, 'COTIZACION_RECHAZADA');
+            GastoRepository::fijarNodo($idSolicitud, $nodoSiguiente);
 
-            FlujoRepository::registrar($idSolicitud, $solicitud['ESTADO'], 'COTIZACION_RECHAZADA',
+            FlujoRepository::registrar($idSolicitud, $solicitud['NODO_ACTUAL'], $nodoSiguiente,
                 'RECHAZAR_COTIZACION', $motivo, $usuario['id']);
 
             Respuesta::ok(null, 'Solicitud rechazada.');
@@ -61,14 +63,14 @@ class AprobacionHandler
         }
     }
 
-    private static function obtenerYValidarEstado($idSolicitud, $estadoEsperado)
+    private static function obtenerYValidarNodo($idSolicitud, $nodoEsperado)
     {
         $solicitud = GastoRepository::obtenerSolicitud($idSolicitud);
         if (!$solicitud) {
             Respuesta::error('La solicitud no existe.', 404);
         }
-        if ($solicitud['ESTADO'] !== $estadoEsperado) {
-            Respuesta::error('La solicitud no se encuentra en el estado esperado para esta acción.');
+        if ($solicitud['NODO_ACTUAL'] !== $nodoEsperado) {
+            Respuesta::error('La solicitud no se encuentra en el paso esperado para esta acción.');
         }
         return $solicitud;
     }

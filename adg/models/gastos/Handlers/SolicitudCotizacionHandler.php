@@ -1,8 +1,7 @@
 <?php
 /**
  * Creación de una solicitud tipo COTIZACIÓN: sube 2 o 3 cotizaciones en
- * PDF (cualquier rol) y queda pendiente de que gerencia administrativa
- * elija la ganadora.
+ * PDF (cualquier rol) y queda en el nodo "aprobacion_cotizacion".
  */
 class SolicitudCotizacionHandler
 {
@@ -31,12 +30,12 @@ class SolicitudCotizacionHandler
         }
 
         try {
-            $estadoInicial = Config::estadoInicial(Config::TIPO_GASTO_COTIZACION);
+            $nodoInicial = 'aprobacion_cotizacion';
 
             $idSolicitud = GastoRepository::crearSolicitud(array_merge($comunes, array(
                 'tipoGasto'        => Config::TIPO_GASTO_COTIZACION,
                 'tipoAnticipo'     => null,
-                'estado'           => $estadoInicial,
+                'nodoInicial'      => $nodoInicial,
                 'requiereAnticipo' => 0,
             )));
 
@@ -44,7 +43,7 @@ class SolicitudCotizacionHandler
                 GastoRepository::guardarCotizacion($idSolicitud, $consecutivo, $archivo);
             }
 
-            FlujoRepository::registrar($idSolicitud, null, $estadoInicial,
+            FlujoRepository::registrar($idSolicitud, null, $nodoInicial,
                 'SOLICITUD_CREADA', 'Solicitud de cotización creada con '.$cargadas.' cotización(es) adjunta(s).', $usuario['id']);
 
             Respuesta::ok(array('idSolicitud' => $idSolicitud), 'Solicitud enviada a aprobación.');
