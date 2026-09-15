@@ -28,7 +28,19 @@ class Respuesta
     private static function enviar($payload)
     {
         header('Content-Type: application/json; charset=utf-8');
-        echo json_encode($payload);
+
+        // JSON_UNESCAPED_UNICODE existe desde PHP 5.4 (disponible siempre en este
+        // proyecto). JSON_INVALID_UTF8_SUBSTITUTE solo existe desde PHP 7.2 -- se
+        // agrega solo si la constante existe, para no romper en el servidor real
+        // (PHP 5.4). Cuando está disponible, evita que un texto con codificación
+        // inválida (fuera de Db::query, que ya corrige esto) deje la respuesta
+        // entera vacía: json_encode() reemplaza ese carácter en vez de fallar.
+        $flags = JSON_UNESCAPED_UNICODE;
+        if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+            $flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+        }
+
+        echo json_encode($payload, $flags);
         exit;
     }
 }

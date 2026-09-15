@@ -41,7 +41,7 @@ class Db
 
         $filas = array();
         while ($fila = mssql_fetch_assoc($resultado)) {
-            $filas[] = $fila;
+            $filas[] = self::corregirCodificacion($fila);
         }
         return $filas;
     }
@@ -90,5 +90,32 @@ class Db
         }
         // Cadena: se duplican las comillas simples (estándar de escape en T-SQL).
         return "'".str_replace("'", "''", (string) $valor)."'";
+    }
+
+    /**
+     * mssql_* (FreeTDS) entrega el texto tal como está almacenado -- en
+     * este servidor, en Windows-1252/Latin1 -- sin convertirlo a UTF-8.
+     * Si no se corrige acá, cualquier tilde o "ñ" hace que json_encode()
+     * falle en silencio (devuelve false ante bytes que no son UTF-8
+     * válido) y el endpoint responde vacío, aunque la consulta sí haya
+     * funcionado. Se corrige columna por columna, no fila completa, para
+     * no tocar los campos numéricos/fecha.
+     */
+    private static function corregirCodificacion($fila)
+    {
+        foreach ($fila as $clave => $valor) {
+            if (!is_string($valor)) {
+                continue;
+            }
+            // mb_convert_encoding() (mbstring) cuando está disponible; si no,
+            // utf8_encode() -- núcleo de PHP, sin depender de ninguna extensión,
+            // equivalente para el rango de acentos/ñ del español (difiere de
+            // Windows-1252 solo en 0x80-0x9F, que no se usa en español salvo
+            // comillas/guiones "curvos" pegados desde Word).
+            $fila[$clave] = function_exists('mb_convert_encoding')
+                ? mb_convert_encoding($valor, 'UTF-8', 'Windows-1252')
+                : utf8_encode($valor);
+        }
+        return $fila;
     }
 }
